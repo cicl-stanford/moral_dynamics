@@ -1,0 +1,130 @@
+{
+        "intro":[
+        {
+            "name": "experiment_slides"
+        },
+        {
+            "name": "experiment_slides1"
+        },
+        {
+            "name": "experiment_slides4"
+        }
+    ],
+        "stim":[
+        {
+            "name": "video1"
+        },
+        {
+            "name": "video2"
+        },
+        {
+            "name": "video3"
+        },
+        {
+            "name": "video4"
+        },
+        {
+            "name": "video5"
+        },
+        {
+            "name": "video6"
+        },
+        {
+            "name": "video7"
+        },
+        {
+            "name": "video8"
+        },
+        {
+            "name": "video9"
+        },
+        {
+            "name": "video10"
+        },
+        {
+            "name": "video11"
+        },
+        {
+            "name": "video12"
+        },
+        {
+            "name": "video13"
+        },
+        {
+            "name": "video14"
+        },
+        {
+            "name": "video15"
+        },
+        {
+            "name": "video16"
+        },
+        {
+            "name": "video17"
+        },
+        {
+            "name": "video18"
+        },
+        {
+            "name": "video19"
+        },
+        {
+            "name": "video20"
+        }
+
+    ],
+        "vid":[
+        {
+            "name": "intro"
+        }
+    ],
+    "question_index": ["responsibility", "effort", "causality", "badness"],
+    "questions":[
+        {
+            "q": "How responsible was <span style='font-weight: bold;color:blue'>Blue</span> for <span style='font-weight: bold;color:green'>Green</span> colliding with the <span style='font-weight: bold;color:red'>Red</span>?",
+            "l": ["not at all", "", "very much"]
+        },
+        {
+            "q": "How much effort did <span style='font-weight: bold;color:blue'>Blue</span> exert in this scenario?", 
+            "l": ["very little", "", "very much"]
+        },
+        {
+            "q": "Would <span style='font-weight: bold;color:green'>Green</span> have collided with the <span style='font-weight: bold;color:red'>Red</span> if <span style='font-weight: bold;color:blue'>Blue</span> hadn't been present?",
+            "l": ["definitely no", "unsure", "definitely yes"]
+        },
+        {
+            "q": "How bad was what <span style='font-weight: bold;color:blue'>Blue</span> did?", 
+            "l": ["not bad", "","very bad"]
+        }
+    ],
+    "instructions":[
+        {
+            "s": "<p><b>Your task</b> is to judge for each video, how responsible <span style='font-weight: bold;color:blue'>Blue</span> was for <span style='font-weight: bold;color:green'>Green</span> colliding into the <span style='font-weight: bold;color:red'>Red</span>.</p>"
+        },
+        {
+            "s": "<p><b>Your task</b> is to judge how much effort <span style='font-weight: bold;color:blue'>Blue</span> exerted in each video.</p>"
+        },
+        {
+            "s": "<p><b>Your task</b> is to judge whether <span style='font-weight: bold;color:green'>Green</span> would have collided with <span style='font-weight: bold;color:red'>Red</span> if <span style='font-weight: bold;color:blue'>Blue</span> were not present in each video.</p>"
+        },
+        {
+            "s": "<p><b>Your task</b> is to judge how bad was what <span style='font-weight: bold;color:blue'>Blue</span> did in each video.</p>"
+        }
+    ],
+    "question_check":[
+        {
+            "q": "To judge how responsible Blue was for Green colliding with Red."
+        },
+        {
+            "q": "To judge how much effort Blue exerted in each video."
+        },
+        {
+            "q": "To judge whether Green would have collided with Red if Blue hadn't been present in each video."
+        },
+        {
+            "q": "To judge how bad was what Blue did in each video."
+        }]
+}
+
+
+ 

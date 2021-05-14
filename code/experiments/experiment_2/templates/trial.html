@@ -1,0 +1,164 @@
+<!-- Instructions -->
+<div class="slide" id="instructions-training-1">
+		<h1>Instructions</h1>
+		<div class="blue">
+				<p>In this experiment, you will be shown interactions between creatures from the alien planet Gaya.</p>
+
+				<p>On planet Gaya there are two types of creatures: <span style="font-weight: bold;color:blue">Blue</span> and <span style="font-weight: bold;color:green">Green</span>. <p>On Planet Gaya there are also <span style="font-weight: bold;color:red">Fireballs</span>: <ul><li> Fireballs <b>can</b> hurt Green creatures.</li><li> Fireballs <b>cannot</b> hurt Blue creatures.</li><li>Blues <b>can</b> see Fireballs.</li> <li>Greens <b>cannot see</b> Fireballs.</li></ul></p></p>
+
+				<img src="static/images/introslide.png" alt="Example" style="width:275px">
+				<img src="static/images/introslide2.png" alt="Example" style="width:275px">
+				<img src="static/images/introslide1.png" alt="Example" style="width:275px">
+				
+				<p>In the experiment, we will show you <b>17</b> videos. In all videos, a <span style="font-weight: bold;color:green">Green</span> creature is burned as a result of colliding with a <span style="font-weight: bold;color:red">Fireball</span>.</p>
+
+				<div class="choices_container">
+					<div id="instructions"></div>
+				</div>
+				
+				<p>Before beginning with the experiment, we will tell you a little more about planet Gaya.</p>
+
+				<p> Please click <b>Start</b> to begin.</p>
+		</div>
+		<div class="continue">
+				<button type="button" class="next">Start</button>
+		</div>
+</div>
+<!-- Introduction -->
+<div class="slide" id="intro">
+		<div id="progress">
+				<div id="progress-text">Introduction Progress</div>
+				<div id="indicator-container">
+						<div id="indicator-outer">
+								<div id="indicator-stage"></div>
+						</div>
+				</div>
+				<div class="spacer"></div>
+		</div>
+		<br />
+		<hr />
+		<div id="stim">
+				<div class="container">
+						<div style="width:600px; margin:auto">	
+								<img src="" id="intro_slide" style="width:600px">
+						</div>
+						<div style="width:600px; margin:auto" id="some">
+						</div>
+				</div>
+				<div class="spacer"></div>
+		</div>
+		<div class="spacer"></div>
+		<hr />
+		<div class="continue">
+				<button type="button" id="intro_next" class="next">Continue</button>
+		</div>
+</div>
+<!-- Questions -->
+<div class="slide" id="questions">
+		<h1>Please select which of the following statements is correct:</h1>
+		<div class="blue" id="check">
+				<p><b>Statement 1:</b>
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q1" value="A">Blues see Fireballs but Greens don't. 
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q1" value="B">Greens see Fireballs but Blues don't. 
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q1" value="C">Both see Fireballs. 
+				</p>
+				<br/>
+				<p><b> Statement 2:</b>
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q2" value="A">Blues get burned if they collide with a Fireball.
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q2" value="B">Greens get burned if they collide with a Fireball.
+
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q2" value="B">Both get burned if they collide with a Fireball. 
+				</p>
+				<br/>
+				<p><b> Statement 3:</b>
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q3" value="A">Fireballs never move.
+				<br>
+				</br>
+						<input class="demoQ" type="radio" name="q3" value="B">Fireballs are sometimes moved by magnetic winds.
+				</p>
+				<br/>
+				<div id="tmp"></div>
+		</div>
+		<div class="continue">
+				<button type="button" class="next" id="question_finish">Continue</button>
+		</div>
+		<p style='text-align:center'>Please press Continue to submit your answers.</p>
+</div>
+
+<!-- Trial -->
+<div class="slide" id="trial">
+		<div id="progress">
+				<div id="progress-text1">Progress</div>
+				<div id="indicator-container">
+						<div id="indicator-outer">
+								<div id="indicator-stage1"></div>
+						</div>
+				</div>
+				<div class="spacer"></div>
+		</div>
+		<br />
+		<hr />
+		<div id="stim">
+				<div id="prompt-text"> Please watch the video twice. Remember that <span style="font-weight: bold;color:blue">Blues</span> <b>can</b> see fireballs and <b>don't</b> get burned. <span style="font-weight: bold;color:lime">Greens</span> <b>cannot</b> see the fireballs and <b>get severely</b> burned if they collide with a fireball.</div>
+				</br>
+				<div class="container">
+						<div class="video_container">
+								<video class="stim_video" width="900" id="vid">
+										<source src="" id="video_mp4">
+										<source src="" id="video_webm">
+										<source src="" id="video_ogg">
+								</video>
+								<div class="choices_container">
+									<div id="choices"></div>
+								</div>
+								<div class="continue">
+										<button type="button" class="next" id="play">Play Video</button>
+								</div>
+						</div>
+				</div>
+				<div class="spacer"></div>
+		</div>
+		<div class="spacer"></div>
+		<!-- <hr /> -->
+		<div class="continue">
+				<button type="button" id="trial_next" class="next">Continue</button>
+		</div>
+</div>
+<!-- Demographics -->
+<div class="slide" id="demographics">
+		<h1>Demographic information</h1>
+		<div class="blue">
+				<p>What factors influenced your judgment? Do you have any other comments about the experiment?</p>
+				<textarea name="feedback" style="width:760px; height:100px;"></textarea>
+				<p><b>Please answer the following questions about yourself to complete the experiment</b>:</p>
+				<p><b>1.</b> Age:
+						<input class="demoQ numberQ" type="number" maxlength="3" name="age" min="18" max="100" step="1"> years
+				</p>
+				<p><b>2.</b> Gender:
+						<input class="demoQ" type="radio" name="sex" value="female">Female
+						<input class="demoQ" type="radio" name="sex" value="male">Male
+						<input class="demoQ" type="radio" name="sex" value="other">Other
+						<input class="demoQ" type="radio" name="sex" value="nosay">Prefer Not to Say
+				</p>
+				<br/>
+				<br/>
+				<p>Please press finish to complete the experiment.</p>
+		</div>
+		<div class="continue">
+				<button type="button" class="next" id="trial_finish">Finish</button>
+		</div>
+</div>

@@ -1,0 +1,288 @@
+/********************************************************************/
+/* Generic element styles                                           */
+/********************************************************************/
+
+body {
+    padding: 0;
+    margin: 0;
+    font-family: Georgia, serif;
+    font-size: 1em;
+    line-height: 1.25em;
+}
+
+p {
+    margin-top: .625em;
+    margin-bottom: .625em;
+}
+
+h1 {
+    font-weight: bold;
+    font-size: 1.25em;
+    margin-top: .625em;
+    margin-bottom: .625em;
+}
+
+ul {
+    margin: 1em 0;
+}
+
+hr {
+    width: 100%;
+}
+
+/********************************************************************/
+/* buttons                                                          */
+/********************************************************************/
+
+button, .next {
+    background-color: white;
+    box-shadow: 1px 1px 3px;
+    border: 1px solid black;
+    margin: 1%;
+    padding: 1% 2% 1% 2%;
+    font-family: Georgia, serif; 
+    font-size: 1em;
+}
+
+button:active, .next:active {
+    background-color: #c9c9c9;
+    box-shadow: 0px 0px 3px;
+}
+
+/********************************************************************/
+/* Slide components                                                 */
+/********************************************************************/
+
+div.slide {
+    /*width: 550px;*/
+    width: 900px;
+    /*position: relative;*/
+    /*position: absolute;*/
+    margin-left: auto;
+    margin-right: auto;
+    /*padding: 1% 2% 1% 2%;*/
+    /*margin: 0 auto;*/
+}
+
+#stim{
+    position: relative;
+}
+
+.stim_image {
+    float: left;
+    /*width: 150px;*/
+    margin: 10px;
+    width: 900px;
+}
+
+div.container{
+ margin-bottom: 10;
+ width: 900px; 
+ /* height: 540px; */
+ /*padding: 10px;  */
+}
+
+div.video_container{
+ width: 900px;
+ /* height: 540px; */
+ /* margin: auto; */
+}
+
+div.choices_container{
+ width: 900px;
+}
+
+.stim_video {
+    width:900px;
+    margin: auto;
+}
+
+.intro_video {
+    width:600px;
+    margin: auto;
+}
+
+.stim_text {
+    margin-left: 10px;
+    margin-right: 10px;
+    /*padding-top: 2cm;*/
+    text-align: justify;
+}
+
+div.spacer { clear: both; }
+
+div.blue {
+    background-color: #CEECF5;
+    padding: .01em 1em .01em 1em;
+    border: 1px sowqlid #CEECF5;
+    position: relative;
+}
+
+div.continue {
+    text-align: center;
+    width: 100%;
+    margin-top: 1%;
+}
+
+span.warn {
+    font-weight: bold;
+    color: blue;
+}
+
+/********************************************************************/
+/* Index slide components                                           */
+/********************************************************************/
+
+img.logo { height: 6.25em; }
+
+#consent {
+    font-size: 0.95em;
+    padding-left: 4%;
+    padding-right: 4%;
+    margin: 1.5em 0;
+    text-align: justify;
+}
+
+span.consent {
+    font-color: red;
+}
+
+/********************************************************************/
+/* Trial slide components                                           */
+/********************************************************************/
+
+/* Progress bar */
+
+#progress {
+    margin-top: .625em;
+    margin-bottom: .625em;
+    position: relative;
+}
+
+#progress-text { position: absolute; }
+
+#progress-text1 { position: absolute; }
+
+/* #prompt-text { font-weight: bold; } */
+
+#indicator-container {
+    position: relative;
+    float: right;
+    width: 70%;
+    margin-bottom: .2em;
+}
+
+#indicator-outer {
+    background-color: white;
+    border: 1px solid black;
+    height: 1em;
+}
+
+#indicator-stage {
+    height: 100%;
+    background-color: navy;
+}
+
+#indicator-stage1 {
+    height: 100%;
+    background-color: navy;
+}
+
+
+/* Question */
+
+.question {
+    /*font-size: 1.2em;*/
+    text-align: center;
+    text-align: left;
+    font-weight: bold;
+    margin:auto;
+}
+
+#choices {
+    text-align: center;
+    /*margin: 0 auto;*/
+    width: 600px;
+    /*padding: 10px;*/
+    margin:auto;
+}
+
+#score {
+    text-align: center;
+    margin: 0 auto;
+    font-size: 1.5em;
+    margin-bottom: 1em;
+}
+
+
+/* Trial phases */
+
+#phase-container {
+    margin-top: 1em;
+    margin-bottom: 1em;
+    padding: 1em;
+    position: relative;
+    overflow: hidden;
+    width: 617px;
+}
+
+.phase {
+    width: 600px;
+    display: none;
+    margin: 0 auto;
+}
+
+#feedback-area {
+    text-align: center;
+    line-height: 300px;
+    font-size: 1.5em;
+}
+
+#prestim-area {
+    text-align: center;
+    line-height: 300px;
+    font-size: 1.5em;
+}
+
+/********************************************************************/
+/* Finished slide components                                        */
+/********************************************************************/
+
+#submit_error_slide {
+    display: none;
+}
+
+#resubmit_slide {
+    display: none;
+}
+
+/********************************************************************/
+/* Error                                                            */
+/********************************************************************/
+
+#error-message {
+    background-color: #FEA;
+    padding: 0 0.625em;
+    border: 1px solid black;
+    margin: 0.625em;
+}
+
+
+/********************************************************************/
+/* Labels for the sliders                                           */ 
+/********************************************************************/
+
+label{
+  display: inline-block;
+  text-align:center;
+  padding-top: 0.5cm;
+}
+label:first-child{
+  text-align:left;
+}
+label:second-child{
+  text-align:center;
+}
+label:last-child{
+  text-align:right;
+}

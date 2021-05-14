@@ -1,0 +1,115 @@
+{
+        "intro":[
+        {
+            "name": "experiment_slides"
+        },
+        {
+            "name": "experiment_slides1"
+        },
+        {
+            "name": "experiment_slides2"
+        },
+        {
+            "name": "experiment_slides3"
+        },
+        {
+            "name": "experiment_slides4"
+        }
+    ],
+        "stim":[
+        {
+            "name": "video1"
+        },
+        {
+            "name": "video3"
+        },
+        {
+            "name": "video4"
+        },
+        {
+            "name": "video7"
+        },
+        {
+            "name": "video8"
+        },
+        {
+            "name": "video9"
+        },
+        {
+            "name": "video10"
+        },
+        {
+            "name": "video11"
+        },
+        {
+            "name": "video12"
+        },
+        {
+            "name": "harm_moving_moving"
+        },
+        {
+            "name": "harm_moving_static"
+        },
+        {
+            "name": "harm_static_moving"
+        },
+        {
+            "name": "harm_static_static"
+        },
+        {
+            "name": "victim_moving_moving"
+        },
+        {
+            "name": "victim_static_moving"
+        },
+        {
+            "name": "victim_moving_static"
+        },
+        {
+            "name": "victim_static_static"
+        }
+
+    ],
+        "vid":[
+        {
+            "name": "intro"
+        },
+        {
+            "name": "intro1"
+        },
+        {
+            "name": "intro2"
+        },
+        {
+            "name": "intro3"
+        }
+    ],
+    "questions":[
+        {
+            "q": "How much effort did <span style='font-weight: bold;color:blue'>Blue</span> exert in this scenario?", 
+            "l": ["very little", "", "very much"]
+        },
+        {
+            "q": "How bad was what <span style='font-weight: bold;color:blue'>Blue</span> did?", 
+            "l": ["not bad", "","very bad"]
+        }
+    ],
+    "instructions":[
+        {
+            "s": "<p><b>Your task</b> is to judge how much effort the <span style='font-weight: bold;color:blue'>Blue</span> creature exerted in each video.</p>"
+        },
+        {
+            "s": "<p><b>Your task</b> is to judge how bad was what the <span style='font-weight: bold;color:blue'>Blue</span> creature did in each video.</p>"
+        }
+    ],
+    "question_check":[
+        {
+            "q": "To judge how much effort the Blue creature exerted in each video."
+        },
+        {
+            "q": "To judge how bad was what the Blue creature did in each video."
+        }]
+}
+
+
+ 

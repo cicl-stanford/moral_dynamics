@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Error</title>
+    <link rel="Favicon" href="static/favicon.ico" />
+    <link rel="stylesheet" type="text/css" href="static/css/general.css" media="screen" />
+  </head>
+
+  <body>
+    <div class="slide">
+      <h1>The experiment encountered an error!</h1>
+      <div class="blue">
+        {% if errornum == 1008 %}
+
+        <p><b>Sorry, our records indicate that you have attempted to
+        complete this hit, but quit before finishing.</b></p>        
+
+        <p>Because this is a Psychology experiment, you can only
+        complete this hit once.</p>
+
+        <p>Please release the hit so someone else can perform the
+        experiment.</p> 
+        
+        {% elif errornum == 1010 %}
+        
+        <h2> 
+          Sorry, our records indicate that you have already completed (or
+          attempted to complete) this hit.
+        </h2>        
+        <p>Because this is a Psychology experiment, you can only complete
+        this hit once.</p> 
+        
+        <p>Please release the hit so someone else can perform the
+        experiment.</p> 
+        
+        {% else %}
+
+        <h2> 
+          Sorry, there was an unexpected error in our processing of your
+          hit.
+        </h2>
+
+        {% endif %}
+
+        <p>If you feel you have reached this page in error, please
+        email <a
+        href="mailto:tger@mit.edu">tger@mit.edu</a>
+        and send the following information:</p>
+        <div id="error-message">
+          <p>
+            Error: {{ errornum }}<br />
+            {% if hitId %} HitID: {{ hitId }}<br /> {% endif %}
+            {% if assignId %} AssignId: {{ assignId }}<br /> {% endif %}
+            {% if workerId %} WorkerId: {{ workerId }}<br /> {% endif %}
+          </p>
+        </div>
+        <p>
+          Our sincere apologies!
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,206 @@
+<!-- Instructions -->
+<div class="slide" id="instructions-training-1">
+	<h1>Instructions</h1>
+	<div class="blue">
+		<p>In this experiment, you will be shown interactions between creatures from the alien planet Gaya.</p>
+		<p>On planet Gaya there are two types of creatures: <span style="font-weight: bold;color:blue">Blues</span> and <span style="font-weight: bold;color:green">Greens</span>.
+			<p>On Planet Gaya there are also <span style="font-weight: bold;color:red">Fireballs</span>:
+				<ul>
+					<li> <span style="font-weight: bold;color:red">Fireballs</span> <b>can</b> hurt <span style="font-weight: bold;color:green">Greens</span>.</li>
+					<li> <span style="font-weight: bold;color:red">Fireballs</span> <b>cannot</b> hurt <span style="font-weight: bold;color:blue">Blues</span>.</li>
+					<li><span style="font-weight: bold;color:blue">Blues</span> <b>can</b> see <span style="font-weight: bold;color:red">Fireballs</span>.</li>
+					<li><span style="font-weight: bold;color:green">Greens</span> <b>cannot see</b> <span style="font-weight: bold;color:red">Fireballs</span>.</li>
+				</ul>
+			</p>
+		</p>
+		<img src="static/images/introslide.png" alt="Example" style="width:275px">
+		<img src="static/images/introslide2.png" alt="Example" style="width:275px">
+		<img src="static/images/introslide1.png" alt="Example" style="width:275px">
+		<p>In the experiment, we will show you <b>11</b> pairs of videos. In all videos, a <span style="font-weight: bold;color:green">Green</span> is burned as a result of colliding with a <span style="font-weight: bold;color:red">Fireball</span>.</p>
+		<p><b>Your task</b> is to judge, for each pair, in which video was what the <span style="font-weight: bold;color:blue">Blue</span> did worse.</p>
+		<p>Before beginning with the experiment, we will tell you a little more about planet Gaya.</p>
+		<p> Please click <b>Start</b> to begin.</p>
+	</div>
+	<div class="continue">
+		<button type="button" class="next">Start</button>
+	</div>
+</div>
+<!-- Introduction -->
+<div class="slide" id="intro">
+	<div id="progress">
+		<div id="progress-text">Introduction Progress</div>
+		<div id="indicator-container">
+			<div id="indicator-outer">
+				<div id="indicator-stage"></div>
+			</div>
+		</div>
+		<div class="spacer"></div>
+	</div>
+	<br />
+	<hr />
+	<div id="stim">
+		<div class="container">
+			<div style="width:600px; margin:auto">
+				<img src="" id="intro_slide" style="width:600px">
+			</div>
+			<div style="width:600px; margin:auto" id="some">
+			</div>
+		</div>
+		<div class="spacer"></div>
+	</div>
+	<div class="spacer"></div>
+	<hr />
+	<div class="continue">
+		<button type="button" id="intro_next" class="next">Continue</button>
+	</div>
+</div>
+<!-- Questions -->
+<div class="slide" id="questions">
+	<h1>Please select which of the following statements are correct:</h1>
+	<div class="blue">
+		<p><b>Statement 1:</b>
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q1" value="A">Blues see Fireballs but Greens don't.
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q1" value="B">Greens see Fireballs but Blues don't.
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q1" value="C">Both see Fireballs.
+		</p>
+		<br/>
+		<p><b> Statement 2:</b>
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q2" value="A">Blues get burned if they collide with a Fireball.
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q2" value="B">Greens get burned if they collide with a Fireball.
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q2" value="B">Both get burned if they collide with a Fireball.
+		</p>
+		<br/>
+		<p><b> Statement 3:</b>
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q3" value="A">Fireballs never move.
+			<br>
+			</br>
+			<input class="demoQ" type="radio" name="q3" value="B">Fireballs are sometimes moved by magnetic winds.
+		</p>
+		<br/>
+	</div>
+	<div class="continue">
+		<button type="button" class="next" id="question_finish">Continue</button>
+	</div>
+	<p style='text-align:center'>Please press Continue to submit your answers.</p>
+</div>
+<!-- Trial -->
+<div class="slide_trial" id="trial">
+	<div class="blue">
+		<div id="progress">
+			<div id="progress-text1">Progress</div>
+			<div id="indicator-container">
+				<div id="indicator-outer">
+					<div id="indicator-stage1"></div>
+				</div>
+			</div>
+			<div class="spacer"></div>
+		</div>
+		<br />
+		<hr />
+		<div id="stim">
+			<div id="prompt-text">In which of the two videos is the <span style="font-weight: bold;color:blue">Blue's</span> action worse? Remember that <span style="font-weight: bold;color:blue">Blues</span> can see fireballs and don't get burned. <span style="font-weight: bold;color:lime">Greens</span> cannot see the fireballs and get severely burned if they collide with a fireball.</div>
+			</br>
+			<div class="container_dual">
+				<div class="video_container_left">
+					<video class="stim_video" id="vid1">
+						<source src="" id="video_mp41">
+						<source src="" id="video_webm1">
+					</video>
+					<div class="continue">
+						<button type="button" class="next" id="play1">Watch Video</button>
+					</div>
+				</div>
+				<div class="video_container_right">
+					<video class="stim_video" id="vid2">
+						<source src="" id="video_mp42">
+						<source src="" id="video_webm2">
+					</video>
+					<div class="continue">
+						<button type="button" class="next" id="play2">Watch Video</button>
+					</div>
+				</div>
+			</div>
+			<div class="spacer"></div>
+			<hr>
+			<div class="choices_button_container">
+				<div id="choices">
+					<p>
+						<h3> What <span style="font-weight: bold;color:blue">Blue</span> did was...</h3>
+						<div class="checkboxgroup">
+							<input type="radio" name="q1" id="response_1" value=1>
+							<label for="response_1"><b>much worse</b> 
+							in the left clip</label>
+						</div>
+						<div class="checkboxgroup">
+							<input type="radio" name="q1" id="response_2" value=2>
+							<label for="response_2"><b>worse</b> 
+							in the left clip</label>
+						</div>
+						<div class="checkboxgroup">
+							<input type="radio" name="q1" id="response_3" value=3>
+							<label for="response_3"><b>somewhat worse</b> 
+							in the left clip</label>
+						</div>
+						<div class="checkboxgroup">
+							<input type="radio" name="q1" id="response_4" value=4>
+							<label for="response_4"><b>somewhat worse</b> 
+							in right clip</label>
+						</div>
+						<div class="checkboxgroup">
+							<input type="radio" name="q1" id="response_5" value=5>
+							<label for="response_5"><b>worse</b> 
+							in right clip</label>
+						</div>
+						<div class="checkboxgroup">
+							<input type="radio" name="q1" id="response_6" value=6>
+							<label for="response_6"><b>much worse</b> 
+							in right clip</label>
+						</div>
+				</div>
+			</div>
+		</div>
+		<div class="spacer"></div>
+		<!-- <hr /> -->
+	</div>
+	<div class="continue">
+		<button type="button" id="trial_next" class="next">Continue</button>
+	</div>
+</div>
+<!-- Demographics -->
+<div class="slide" id="demographics">
+	<h1>Demographic information</h1>
+	<div class="blue">
+		<p>What factors influenced whether you said that a Blue was bad to a Green? Do you have any other comments about the experiment?</p>
+		<textarea name="feedback" style="width:760px; height:100px;"></textarea>
+		<p><b>Please answer the following questions about yourself to complete the experiment</b>:</p>
+		<p><b>1.</b> Age:
+			<input class="demoQ numberQ" type="number" maxlength="3" name="age" min="18" max="100" step="1"> years
+		</p>
+		<p><b>2.</b> Gender:
+			<input class="demoQ" type="radio" name="sex" value="female">Female
+			<input class="demoQ" type="radio" name="sex" value="male">Male
+			<input class="demoQ" type="radio" name="sex" value="other">Other
+			<input class="demoQ" type="radio" name="sex" value="nosay">Prefer Not to Say
+		</p>
+		<br/>
+		<br/>
+		<p>Please press finish to complete the experiment.</p>
+	</div>
+	<div class="continue">
+		<button type="button" class="next" id="trial_finish">Finish</button>
+	</div>
+</div>

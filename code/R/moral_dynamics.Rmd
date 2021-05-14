@@ -1,0 +1,3159 @@
+---
+title: "Moral Dynamics"
+author: "Tobias Gerstenberg"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  bookdown::html_document2:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+---
+
+# Load packages 
+
+```{r, message=FALSE, warning=FALSE}
+library("knitr")        # for RMarkdown commands 
+library("kableExtra")   # for nice tables
+library("tidyjson")     # for reading json files 
+library("corrr")        # for correlation tables 
+library("RSQLite")      # for reading databases
+library("broom.mixed")  # for tidying regressions
+library("brms")         # for Bayesian models 
+library("tidybayes")    # for Bayesian models 
+library("DT")           # for html tables 
+library("emmeans")      # for estimated marginal means
+library("Hmisc")        # for bootstrapping
+library("patchwork")    # for figure panels 
+library("png")          # adding pngs to images
+library("janitor")      # for cleaning column names
+library("egg")          # for geom_custom
+library("grid")         # functions for dealing with images 
+library("magick")       # read in images 
+library("ggpubr")       # put image in background
+library("xtable")       # for latex tables
+library("ggtext")       # for text in ggplots
+library("tidyverse")    # for data wrangling, visualization, etc. 
+```
+
+# Helper functions
+
+```{r}
+theme_set(theme_classic() + 
+    theme(text = element_text(size = 24)))
+
+opts_chunk$set(comment = "",
+               fig.show = "hold")
+
+options(dplyr.summarise.inform = F)
+
+# mapping conditions to colors 
+condition_colors = c("effort" = "#f4a261",
+                     "causality" = "#e9c46a",
+                     "responsibility" = "#2a9d8f",
+                     "badness" = "#264653",
+                     "moral" = "#264653")
+
+# function for printing out html or latex tables 
+print_table = function(data, format = "html", digits = 2){
+  if(format == "html"){
+    data %>% 
+      kable(digits = digits) %>% 
+      kable_styling()
+  }else if(format == "latex"){
+    data %>% 
+      xtable(digits = digits,
+             caption = "Caption",
+             label = "tab:table") %>%
+      print(include.rownames = F,
+            booktabs = T,
+            sanitize.colnames.function = identity,
+            caption.placement = "top")
+  }
+}
+
+# rmse
+rmse = function(x, y){
+  return(sqrt(mean((x - y)^2)))
+}
+
+# scatter plots 
+func_scatter_plot = function(data, model, fit, xlabel, ylabel, condition){
+  
+  df.plot = data %>% 
+    group_by(clip) %>% 
+    summarize(value = smean.cl.boot(rating)) %>% 
+    mutate(index = c("rating", "low", "high")) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from = index,
+                values_from = value) %>% 
+    left_join(model,
+              by = "clip") 
+  
+  df.plot = fit %>% 
+    fitted(newdata = df.plot,
+           re_formula = NA) %>% 
+    as_tibble() %>% 
+    clean_names() %>% 
+    bind_cols(df.plot) %>% 
+    bind_cols(fit %>% 
+                predict(newdata = df.plot,
+                        re_formula = NA,
+                        probs = c(0.25, 0.75)) %>% 
+                as_tibble() %>% 
+                clean_names() %>% 
+                rename(prediction = estimate,
+                       prediction_low = q25,
+                       prediction_high = q75) %>% 
+                select(-est_error))
+  
+  x = "estimate"
+  y = "rating"
+  
+  ggplot(data = df.plot,
+         mapping = aes(x = estimate,
+                       y = rating)) + 
+    geom_abline(intercept = 0,
+                slope = 1,
+                linetype = 2) +
+    geom_ribbon(mapping = aes(ymin = prediction_low,
+                              ymax = prediction_high),
+                stat = "identity",
+                alpha = 0.2,
+                fill = "lightblue") +
+    geom_smooth(mapping = aes(y = estimate,
+                              ymin = q2_5,
+                              ymax = q97_5),
+                stat = "identity",
+                color = "lightblue",
+                alpha = 0.4,
+                fill = "lightblue") +
+    geom_linerange(mapping = aes(ymin = low,
+                                 ymax = high),
+                   size = 1,
+                   color = "gray80") + 
+    geom_point(size = 2.5,
+               shape = 21,
+               color = "black",
+               fill = condition_colors[condition]) + 
+    annotate(geom = "text",
+             label = df.plot %>% 
+               summarize(r = cor(.data[[x]], .data[[y]]),
+                         rmse = rmse(.data[[x]], .data[[y]])) %>% 
+               mutate(across(.fns = ~ round(., 2))) %>% 
+               unlist() %>% 
+               str_c(names(.), " = ", .),
+             x = c(0, 0), 
+             y = c(100, 90),
+             size = 7,
+             hjust = 0) + 
+    labs(x = xlabel,
+         y = ylabel) +
+    scale_color_manual(values = c("black", "#e41a1c"),
+                       guide = F) +
+    scale_x_continuous(breaks = seq(0, 100, 25)) +
+    scale_y_continuous(breaks = seq(0, 100, 25)) +
+    coord_cartesian(xlim = c(0, 100),
+                    ylim = c(0, 100)) +
+    theme(text = element_text(size = 30),
+          axis.title.x = element_markdown(size = 30))
+}
+```
+
+# Model predictions 
+
+```{r, warning=FALSE, message=FALSE}
+df.model.effort = read_csv("../../data/model/model_effort.csv") %>% 
+  select(-X1)
+
+df.model.causality = read_csv("../../data/model/model_causality.csv") %>% 
+  select(-X1)
+
+df.model.features = read_csv("../../data/model/model_features.csv") %>% 
+  select(-X1)
+```
+
+# EXPERIMENT 1
+
+## DATA
+
+### Read in data 
+
+```{r}
+set.seed(1)
+
+# Connect to database file and collect data
+con = dbConnect(SQLite(),
+                dbname = "../../data/empirical/experiment1_anonymized.db")
+df.exp1.data = dbReadTable(con, "moral_dynamics")
+dbDisconnect(con)
+
+# filter out incompletes
+df.exp1.data = df.exp1.data %>% 
+  filter(status %in% 3:5) %>% 
+  filter(codeversion == "experiment_1")
+
+# collect the demographic data 
+df.exp1.demographics = df.exp1.data$datastring %>%
+  spread_values(condition = jstring("condition"),
+                age = jstring("questiondata", "age"),
+                gender = jstring("questiondata", "sex"),
+                feedback = jstring("questiondata", "feedback")) %>%
+  rename(participant = document.id) %>%
+  mutate(time = difftime(df.exp1.data$endhit,
+                         df.exp1.data$beginhit,
+                         units = "mins")) %>% 
+  as_tibble() %>% 
+  mutate(age = as.numeric(age))
+
+# structure the trial data 
+df.exp1.long = df.exp1.data$datastring %>% 
+  as.tbl_json() %>% 
+  enter_object("data") %>% 
+  gather_array("order") %>% 
+  enter_object("trialdata") %>% 
+  spread_values(clip = jstring("clip"),
+                display = jstring("order"),
+                rating = jstring("rating")) %>%
+  as_tibble() %>% 
+  rename(participant = document.id) %>% 
+  mutate(clip = str_remove_all(clip, pattern = "video")) %>% 
+  separate(clip, into = c("clip_left", "clip_right")) %>%
+  mutate(across(c(participant, contains("clip"), rating), ~ as.numeric(.))) %>% 
+  mutate(clips = str_c(clip_left, clip_right, sep = "_")) %>% 
+  # flip rating scale 
+  mutate(rating = ifelse(display == "flipped", 7 - rating, rating),
+         clips = factor(clips, levels = c("11_7",
+                                        "9_2",
+                                        "11_4",
+                                        "10_3",
+                                        "7_12",
+                                        "7_4",
+                                        "6_5",
+                                        "4_12",
+                                        "3_1",
+                                        "10_9",
+                                        "8_10")),
+         clip_index = factor(clips,
+                             labels = 1:11)) %>% 
+  relocate(clip_index, .after = participant) %>% 
+  arrange(participant, clip_index)
+
+# flip the 8_10 trial to 10_8 so that the left video is always the one with more 
+# effort 
+df.exp1.long = df.exp1.long %>% 
+  mutate(clips = fct_recode(clips, `10_8` = "8_10"),
+         clip_left = ifelse(clips == "10_8", 10, clip_left),
+         clip_right = ifelse(clips == "10_8", 8, clip_right),
+         rating = ifelse(clips == "10_8", 7 - rating, rating),
+         preference = ifelse(rating <= 3, "left", "right"))
+
+# read in results from moral kinematics experiment 
+df.exp1.kinematics = read.csv("../../data/empirical/moral_kinematics.csv")
+
+# save the trial info 
+df.exp1.trialinfo = df.exp1.long %>% 
+  filter(participant == 1) %>% 
+  select(clip_index, clips, contains("causality"), contains("effort"))
+
+# mean on the trial level 
+df.exp1.means = df.exp1.long %>% 
+  group_by(clip_index, clips) %>% 
+  summarize(rating = smean.cl.boot(rating)) %>% 
+  mutate(index = c("mean", "low", "high")) %>% 
+  pivot_wider(names_from = index,
+              values_from = rating)
+
+# counts
+df.exp1.counts = df.exp1.long %>%
+  mutate(rating = as.factor(rating)) %>% 
+  count(clip_index, rating, .drop = F) %>% 
+  group_by(clip_index) %>% 
+  mutate(p = n / sum(n)) %>% 
+  ungroup() %>% 
+  left_join(df.exp1.trialinfo %>% 
+              select(clip_index, clips),
+            by = "clip_index") %>% 
+  relocate(clips, .after = clip_index)
+```
+
+### Demographics 
+
+```{r}
+df.exp1.demographics %>% 
+  summarize(age_mean = mean(age),
+            age_sd = sd(age),
+            n_female = sum(gender == "female"),
+            n_male = sum(gender == "male"),
+            n_other = sum(!gender %in% c("female", "male")),
+            n = n(),
+            time_mean = mean(time),
+            time_sd = sd(time)) %>% 
+  print_table(digits = 1)
+```
+
+### Feedback 
+
+```{r}
+df.exp1.demographics %>% 
+  select(participant, time, feedback) %>% 
+  mutate(time = round(time, 2)) %>% 
+  datatable(height = 800)
+```
+
+## STATS 
+
+### Choices
+
+#### Overall
+
+```{r}
+df.exp1.long %>% 
+  count(preference) %>% 
+  mutate(p = n/sum(n)) %>% 
+  print_table()
+```
+
+#### Per participant 
+
+```{r}
+df.exp1.long %>% 
+  group_by(participant) %>% 
+  count(preference, name = "n_left") %>% 
+  filter(row_number() %% 2 == 1) %>% 
+  ungroup() %>% 
+  count(n_left, name = "n_participants") %>% 
+  pivot_wider(names_from = n_left,
+              values_from = n_participants) %>% 
+  mutate(`# chosen more effort clip` = "# participants") %>% 
+  relocate(`# chosen more effort clip`) %>% 
+  print_table()
+```
+
+#### Per trial
+
+```{r}
+df.exp1.long %>% 
+  group_by(clip_index, clips) %>% 
+  count(preference) %>% 
+  summarize(p = n/sum(n)) %>% 
+  filter(row_number() %% 2 == 1) %>% 
+  print_table()
+```
+
+## PLOTS 
+
+### Bar plot 
+
+```{r fig.height=8, fig.width=12}
+df.plot = df.exp1.counts %>% 
+  separate(clips,
+           into = c("clip_left", "clip_right"),
+           remove = F) %>% 
+  mutate(clip_index = as.numeric(as.character(clip_index)))
+
+df.image_order = df.plot %>% 
+  distinct(clip_index, clip_left, clip_right) %>% 
+  mutate(across(.fns = ~as.numeric(.)))
+
+# Determine the clip labels for the figure 
+clip_labels = df.plot %>% 
+  distinct(clip_left, clip_right) %>% 
+  t() %>% 
+  as.numeric() %>% 
+  as.factor()
+
+df.plot = df.plot %>% 
+  mutate(clip_left_labeled = factor(clip_left,
+                                    levels = unique(clip_labels),
+                                    labels = levels(clip_labels)),
+         clip_right_labeled = factor(clip_right,
+                                    levels = unique(clip_labels),
+                                    labels = levels(clip_labels)))
+
+fun_image = function(grob, label){
+  ggplot() + 
+    background_image(grob) +
+    annotate(geom = "text",
+             x = 0.05,
+             y = 0.95,
+             hjust = 0,
+             vjust = 1,
+             label = label,
+             size = 10,
+             color = "white") + 
+    theme_void() + 
+    coord_cartesian(xlim = c(0, 1),
+                    ylim = c(0, 1),
+                    expand = F) + 
+    theme(plot.margin = margin(b = 0.2, r = 0.1, l = 0.1, unit = "cm"))
+}
+
+# images 
+df.images = tibble(clip = 1:12,
+                   label = factor(clip,
+                                  levels = unique(clip_labels),
+                                  labels = 1:12)) %>% 
+  mutate(grob = map(.x = clip, 
+                    .f = ~ image_read(path = 
+                                        str_c("../../figures/diagrams/experiment1/video",
+                                              .x, ".png"))),
+         plot = map2(.x = grob,
+                     .y = label,
+                    .f = ~ fun_image(grob = .x, label = .y)))
+# spacer 
+pspace = ggplot() +
+  theme_void() + 
+  theme(plot.margin = margin(b = 0.2, unit = "cm"))
+
+# text 
+df.text = df.plot %>% 
+  distinct(clip_index) %>% 
+  mutate(label = str_c("trial ", 1:n()),
+         x = 3.5, 
+         y = Inf)
+
+#  plot 1 
+p1 = ggplot(data = df.plot %>% 
+              filter(clip_index <= 6),
+       mapping = aes(x = rating,
+                     y = p)) + 
+  geom_col(color = "black",
+           fill = condition_colors["badness"],
+           alpha = 0.75) +
+  geom_text(data = df.text %>% 
+              filter(clip_index <= 6),
+            mapping = aes(label = label,
+                          x = x,
+                          y = y),
+            vjust = 1.2,
+            size = 8) + 
+  facet_wrap(~ clip_index,
+             ncol = 1) +
+  scale_x_discrete(labels = c("left\nworse", "", "", "", "", "right\nworse")) + 
+  scale_y_continuous(breaks = seq(0, 1, 0.2),
+                     limits = c(0, 0.8)) +
+  labs(x = "rating",
+       title = "Probability of selection") + 
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.line.x = element_line(),
+        axis.ticks.y = element_blank(),
+        panel.grid.major.y = element_line(),
+        plot.title = element_text(size = 22,
+                                  hjust = 0.5),
+        axis.line.y = element_blank()) 
+
+p2 = ggplot(data = df.plot %>% 
+              filter(clip_index > 6),
+       mapping = aes(x = rating,
+                     y = p)) + 
+  geom_col(color = "black",
+           fill = condition_colors["badness"],
+           alpha = 0.75) +
+  geom_text(data = df.text %>% 
+              filter(clip_index > 6),
+            mapping = aes(label = label,
+                          x = x,
+                          y = y),
+            vjust = 1.2,
+            size = 8) + 
+  facet_wrap(~ clip_index,
+             ncol = 1) +
+  scale_x_discrete(labels = c("left\nworse", "", "", "", "", "right\nworse")) + 
+  scale_y_continuous(breaks = seq(0, 1, 0.2),
+                     limits = c(0, 0.8)) +
+  labs(x = "rating",
+       title = "Probability of selection") + 
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.major.y = element_line(),
+        plot.title = element_text(size = 22,
+                             hjust = 0.5),
+        axis.line.y = element_blank()) 
+
+
+layout = " 
+ABCDEF
+GBHIEJ
+KBLMEN
+OBPQER
+SBTUEV
+WBX###
+"  
+
+df.images$plot[[df.image_order$clip_left[1]]] + 
+  p1 + 
+  df.images$plot[[df.image_order$clip_right[1]]] + 
+  df.images$plot[[df.image_order$clip_left[7]]] + 
+  p2 + 
+  df.images$plot[[df.image_order$clip_right[7]]] + 
+  df.images$plot[[df.image_order$clip_left[2]]] + 
+  df.images$plot[[df.image_order$clip_right[2]]] +
+  df.images$plot[[df.image_order$clip_left[8]]] + 
+  df.images$plot[[df.image_order$clip_right[8]]] + 
+  df.images$plot[[df.image_order$clip_left[3]]] + 
+  df.images$plot[[df.image_order$clip_right[3]]] +
+  df.images$plot[[df.image_order$clip_left[9]]] + 
+  df.images$plot[[df.image_order$clip_right[9]]] + 
+  df.images$plot[[df.image_order$clip_left[4]]] + 
+  df.images$plot[[df.image_order$clip_right[4]]] +
+  df.images$plot[[df.image_order$clip_left[10]]] + 
+  df.images$plot[[df.image_order$clip_right[10]]] + 
+  df.images$plot[[df.image_order$clip_left[5]]] + 
+  df.images$plot[[df.image_order$clip_right[5]]] +
+  df.images$plot[[df.image_order$clip_left[11]]] + 
+  df.images$plot[[df.image_order$clip_right[11]]] + 
+  df.images$plot[[df.image_order$clip_left[6]]] + 
+  df.images$plot[[df.image_order$clip_right[6]]] + 
+  plot_layout(design = layout)
+  
+ggsave(filename = "../../figures/plots/experiment1_bars.pdf",
+       width = 12,
+       height = 8)
+```
+
+### Stimulus figure 
+
+```{r fig.height=6, fig.width=14}
+# images 
+df.images = tibble(clip = c("effort_low", "effort_medium", "effort_high", 
+                            "cause_low", "cause_medium", "cause_high"),
+                   label = c("low effort", "medium effort", "high effort",
+                             "low causality", "medium causality", "high causality")) %>% 
+  mutate(grob = map(.x = clip, 
+                    .f = ~ image_read(path = 
+                                        str_c("../../figures/diagrams/selection/",
+                                              .x, ".png"))),
+         plot = map2(.x = grob,
+                     .y = label,
+                     .f = ~ ggplot() + 
+                       background_image(.x) + 
+                       annotate(geom = "text",
+                                x = 20,
+                                y = 50,
+                                hjust = 0,
+                                vjust = 0,
+                                label = .y,
+                                size = 8,
+                                color = "white") + 
+                       coord_fixed(xlim = c(0, 961),
+                                   ylim = c(0, 541),
+                                   expand = F) + 
+                       theme_void() + 
+                       theme(plot.margin = margin(b = 0.2,
+                                                  r = 0.2,
+                                                  l = 0.2, unit = "cm"))))
+
+wrap_plots(df.images$plot) +
+  plot_layout(nrow = 2) + 
+  plot_annotation(tag_levels = "A") & 
+  theme(plot.tag = element_text(face = "bold", size = 20))
+
+ggsave(filename = "../../figures/plots/stimuli_example.pdf",
+       width = 14,
+       height = 6)
+```
+
+
+
+## Tables 
+
+### Moral dynamics vs. Moral kinematics
+
+```{r}
+df.exp1.long %>% 
+  group_by(clip_index, clips) %>% 
+  count(preference) %>% 
+  summarize(dynamics = n/sum(n)) %>% 
+  ungroup() %>% 
+  filter(row_number() %% 2 == 1) %>% 
+  left_join(df.exp1.kinematics %>% 
+              mutate(clips = ifelse(trial == 8, "10_8", clips),
+                     rating = ifelse(trial == 8, 1 - rating, rating)) %>% 
+              rename(kinematics = rating),
+              by = "clips") %>% 
+  select(clip_index, dynamics, kinematics) %>% 
+  pivot_longer(cols = -clip_index,
+               names_to = "index",
+               values_to = "value") %>% 
+  mutate(value = value * 100) %>% 
+  pivot_wider(names_from = clip_index, 
+              values_from = value) %>% 
+  print_table(digits = 0)
+  # print_table(format = "latex",
+  #             digits = 0)
+```
+
+# EXPERIMENT 2
+
+## DATA
+
+### Read in data
+
+```{r}
+set.seed(1)
+
+# Read in data 
+con = dbConnect(SQLite(),dbname = "../../data/empirical/experiment2_anonymized.db");
+df.exp2.data = dbReadTable(con, "moral_dynamics")
+dbDisconnect(con)
+
+# Filter out incompletes 
+df.exp2.data = df.exp2.data %>% 
+  filter(status %in% 3:5) %>% 
+  filter(codeversion %in% c("experiment_2"))
+
+# Demographic data
+df.exp2.demographics = df.exp2.data$datastring %>%
+  spread_values(condition = jstring("condition"),
+                age = jstring("questiondata", "age"),
+                gender = jstring("questiondata", "sex"),
+                feedback = jstring("questiondata", "feedback")) %>%
+  mutate(time = difftime(df.exp2.data$endhit, df.exp2.data$beginhit, units = "mins"),
+         condition = factor(condition,
+                            levels = 0:1,
+                            labels = c("effort", "moral"))) %>%
+  mutate(age = as.numeric(age)) %>% 
+  rename(participant = document.id) %>%
+  as_tibble()
+
+# Structure data 
+df.exp2.long = df.exp2.data$datastring %>% # Grab datastring
+  as.tbl_json() %>% # Structure it as a json
+  enter_object("data") %>% # Access the recorded data sub-object
+  gather_array("order") %>%
+  enter_object("trialdata") %>% # Access the recorded responses from the trials
+  gather_object("index") %>%
+  append_values_string("values") %>%
+  as_tibble() %>% # Compile everything into a dataframe
+  pivot_wider(names_from = index,
+              values_from = values) %>%
+  rename(participant = document.id) %>%
+  select(-condition) %>%
+  left_join(df.exp2.demographics %>%
+              select(participant, condition),
+            by = "participant") %>%
+  rename(rating = response) %>%
+  mutate(rating = as.numeric(rating)) %>%
+  arrange(participant)
+
+# determine the clip order 
+df.clip_order2 = df.exp2.long %>% 
+  group_by(clip) %>% 
+  summarize(rating = mean(rating)) %>% 
+  arrange(rating) %>% 
+  mutate(clip_index = 1:n()) %>% 
+  select(-rating)
+
+df.exp2.long = df.exp2.long %>% 
+  left_join(df.clip_order2,
+            by = "clip") %>% 
+  relocate(clip_index, .after = participant)
+
+# split data set by condition 
+df.exp2.long.effort = df.exp2.long %>% 
+  filter(condition == "effort")
+
+df.exp2.long.moral = df.exp2.long %>% 
+  filter(condition == "moral")
+
+# calculate means 
+df.exp2.means = df.exp2.long %>% 
+  group_by(condition, clip) %>% 
+  summarize(value = smean.cl.boot(rating)) %>% 
+  mutate(index = c("mean", "low", "high")) %>% 
+  pivot_wider(names_from = index, 
+              values_from = value) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = condition,
+              values_from = c(mean, low, high)) %>% 
+  left_join(df.clip_order2,
+            by = "clip") %>% 
+  relocate(clip_index) %>% 
+  arrange(clip_index)
+
+# read in model predictions from best-fitting effort and causality model (determined below)
+df.exp2.model = df.model.effort %>% 
+  filter(experiment == 2) %>% 
+  select(clip,
+         effort = `effort_0.56`,
+         ) %>% 
+  left_join(df.model.causality %>% 
+              filter(experiment == 2) %>% 
+              select(clip,
+                     causality = `causality_1.7`),
+            by = "clip") %>% 
+  mutate(effort = effort / max(effort)) %>% 
+  left_join(df.model.features %>% 
+              filter(experiment == 2),
+            by = "clip") %>% 
+  mutate(across(c(distance, duration), ~ . / max(.))) %>% 
+  left_join(df.exp2.means %>%
+              mutate(mean_effort = mean_effort / 100) %>% 
+              select(clip, effort_empirical = mean_effort),
+            by = "clip") %>% 
+  select(-experiment) %>% 
+  left_join(df.clip_order2,
+            by = "clip") %>% 
+  relocate(clip_index) %>% 
+  relocate(effort_empirical, .after = effort) %>% 
+  arrange(clip_index)
+```
+
+### Demographics 
+
+```{r}
+df.exp2.demographics %>% 
+  summarize(age_mean = mean(age),
+            age_sd = sd(age),
+            n_female = sum(gender == "female"),
+            n_male = sum(gender == "male"),
+            n_other = sum(!gender %in% c("female", "male")),
+            n = n(),
+            time_mean = mean(time),
+            time_sd = sd(time)) %>% 
+  print_table(digits = 1)
+```
+
+### Feedback 
+
+```{r}
+df.exp2.demographics %>% 
+  select(participant, condition, time, feedback) %>% 
+  mutate(time = round(time, 2)) %>% 
+  datatable(height = 800)
+```
+
+## STATS
+
+### Find best-fitting effort model 
+
+```{r}
+df.fit = df.exp2.means %>% 
+  select(clip, mean_effort) %>% 
+  left_join(df.model.effort %>% 
+              filter(experiment == 2) %>% 
+              select(-experiment),
+            by = "clip") %>% 
+  mutate(across(contains("effort_"), ~ . / max(.)))
+
+predictor_names = df.fit %>% 
+  select(contains("effort_")) %>% 
+  names()
+
+for (i in predictor_names){
+  df.fit = df.fit %>%
+    mutate("{i}" := lm(formula = str_c("mean_effort ~ ", i),
+                       data = df.fit)$fitted.values)
+}
+
+df.fit %>% 
+  summarize(across(contains("effort_"), list(rmse = ~ rmse(mean_effort, .x),
+                                             r = ~ cor(mean_effort, .x)))) %>% 
+  pivot_longer(cols = everything()) %>% 
+  mutate(name = str_remove(name, "effort_")) %>% 
+  separate(name, into = c("effort", "index"), sep = "_") %>% 
+  pivot_wider(names_from = index,
+              values_from = value) %>% 
+  arrange(rmse)
+```
+
+### Bayesian models  
+
+#### Effort
+ 
+```{r}
+df.data = df.exp2.long.effort %>% 
+  left_join(df.exp2.model,
+            by = c("clip_index", "clip"))
+
+fit.exp2.effort = brm(formula = rating ~ 1 + effort + (1 + effort | participant),
+                      data = df.data, 
+                      file = "cache/fit.exp2.effort",
+                      seed = 1)
+
+fit.exp2.effort
+```
+ 
+#### Morality 
+
+##### Baseline 
+
+```{r}
+df.data = df.exp2.long.moral %>% 
+  left_join(df.exp2.model,
+            by = c("clip_index", "clip"))
+
+fit.exp2.moral_baseline = brm(
+  formula = rating ~ 1 + (1 | participant),
+  data = df.data, 
+  file = "cache/fit.exp2.moral_baseline",
+  seed = 1)
+```
+
+
+##### Effort and causality 
+
+```{r}
+df.data = df.exp2.long.moral %>% 
+  left_join(df.exp2.model,
+            by = c("clip_index", "clip"))
+
+# Fit the models 
+fit.exp2.moral_effort = brm(
+  formula = rating ~ 1 + effort_empirical + (1 + effort_empirical | participant),
+  data = df.data, 
+  file = "cache/fit.exp2.moral_effort",
+  seed = 1)
+
+fit.exp2.moral_causality = brm(
+  formula = rating ~ 1 + causality + (1 + causality | participant),
+  data = df.data, 
+  file = "cache/fit.exp2.moral_causality",
+  seed = 1)
+
+fit.exp2.moral_effort_causality = brm(
+  formula = rating ~ 1 + effort_empirical + causality + 
+    (1 + effort_empirical + causality | participant),
+  data = df.data, 
+  file = "cache/fit.exp2.moral_effort_causality",
+  seed = 1)
+```
+
+##### Heuristic 
+
+```{r}
+df.data = df.exp2.long.moral %>% 
+  left_join(df.exp2.model,
+            by = c("clip_index", "clip"))
+
+fit.exp2.moral_heuristic = brm(
+  formula = rating ~ 1 + 
+    distance + 
+    duration + 
+    frequency + 
+    agent_moving + 
+    patient_moving + 
+    fireball_moving + 
+    collision_agent_patient + 
+    collision_agent_fireball + 
+    (1 | participant),
+  data = df.data, 
+  file = "cache/fit.exp2.moral_heuristic",
+  seed = 1)
+```
+
+###### Pairwise correlations between the different features 
+
+```{r}
+df.exp2.model %>% 
+  mutate(across(where(is.logical), ~ . * 1)) %>% 
+  select(where(is.numeric)) %>% 
+  select(-c(clip_index, effort, effort_empirical)) %>% 
+  correlate() %>% 
+  rearrange() %>% 
+  shave() %>% 
+  fashion() 
+```
+
+##### Model comparison 
+
+###### Overall
+
+```{r}
+fit.exp2.moral_baseline = add_criterion(
+  fit.exp2.moral_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.moral_baseline")
+
+fit.exp2.moral_effort = add_criterion(
+  fit.exp2.moral_effort,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.moral_effort")
+
+fit.exp2.moral_causality = add_criterion(
+  fit.exp2.moral_causality,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.moral_causality")
+
+fit.exp2.moral_effort_causality = add_criterion(
+  fit.exp2.moral_effort_causality,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.moral_effort_causality")
+
+fit.exp2.moral_heuristic = add_criterion(
+  fit.exp2.moral_heuristic,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.moral_heuristic")
+
+loo_compare(fit.exp2.moral_effort,
+            fit.exp2.moral_causality,
+            fit.exp2.moral_effort_causality,
+            fit.exp2.moral_heuristic,
+            fit.exp2.moral_baseline)
+```
+
+###### Individual participants 
+
+```{r, eval=FALSE}
+df.data = df.exp2.long.moral %>% 
+  left_join(df.exp2.model)
+
+# initial model fits (used for compilation)
+fit.exp2.moral_individual_baseline = 
+  brm(formula = rating ~ 1, 
+      data = df.data %>% 
+        filter(participant == 1),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp2.moral_individual_baseline"))
+
+fit.exp2.moral_individual_effort = 
+  brm(formula = rating ~ 1 + effort_empirical, 
+      data = df.data %>% 
+        filter(participant == 1),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp2.moral_individual_effort"))
+
+fit.exp2.moral_individual_causality = 
+  brm(formula = rating ~ 1 + causality, 
+      data = df.data %>% 
+        filter(participant == 1),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp2.moral_individual_causality"))
+
+fit.exp2.moral_individual_effort_causality = 
+  brm(formula = rating ~ 1 + effort_empirical + causality,
+      data = df.data %>% 
+        filter(participant == 1),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp2.moral_individual_effort_causality"))
+
+fit.exp2.moral_individual_heuristic = 
+  brm(formula = rating ~ 1 + 
+        distance + 
+        duration + 
+        frequency + 
+        agent_moving + 
+        patient_moving + 
+        fireball_moving + 
+        collision_agent_patient + 
+        collision_agent_fireball,
+      data = df.data %>% 
+        filter(participant == 1),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp2.moral_individual_heuristic"))
+
+# update model fits for different participants
+df.exp2.moral.individual_fit = df.data %>%
+  group_by(participant) %>%
+  nest() %>%
+  ungroup() %>% 
+  # fit model for each participant
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp2.moral_individual_baseline,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_effort = map(.x = data,
+                          .f = ~ update(fit.exp2.moral_individual_effort,
+                                        newdata = .x,
+                                        seed = 1)),
+         fit_causality = map(.x = data,
+                             .f = ~ update(fit.exp2.moral_individual_causality,
+                                           newdata = .x,
+                                           seed = 1)),
+         fit_effort_causality = map(.x = data,
+                                    .f = ~ update(fit.exp2.moral_individual_effort_causality,
+                                                  newdata = .x,
+                                                  seed = 1)),
+         fit_heuristic = map(.x = data,
+                             .f = ~ update(fit.exp2.moral_individual_heuristic,
+                                           newdata = .x,
+                                           seed = 1))) %>% 
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            ~ add_criterion(.x,
+                                            criterion = c("loo"))),
+         fit_effort = map(.x = fit_effort,
+                          ~ add_criterion(.x,
+                                          criterion = c("loo"))),
+         fit_causality = map(.x = fit_causality,
+                             ~ add_criterion(.x,
+                                             criterion = c("loo"))),
+         fit_effort_causality = map(.x = fit_effort_causality,
+                                    ~ add_criterion(.x,
+                                                    criterion = c("loo"))),
+         fit_heuristic = map(.x = fit_heuristic,
+                             ~ add_criterion(.x,
+                                             criterion = c("loo"))),
+         r_effort = map2_dbl(.x = data,
+                             .y = fit_effort,
+                             .f = ~ cor(.x$rating, .y %>% 
+                                          fitted() %>% 
+                                          .[, 1])),
+         r_causality = map2_dbl(.x = data,
+                                .y = fit_causality,
+                                .f = ~ cor(.x$rating, .y %>% 
+                                             fitted() %>% 
+                                             .[, 1])),
+         r_effort_causality = map2_dbl(.x = data,
+                                       .y = fit_effort_causality,
+                                       .f = ~ cor(.x$rating, .y %>% 
+                                                    fitted() %>% 
+                                                    .[, 1])),
+         r_heuristic = map2_dbl(.x = data,
+                                .y = fit_heuristic,
+                                .f = ~ cor(.x$rating, .y %>% 
+                                             fitted() %>% 
+                                             .[, 1])),
+         rmse_effort = map2_dbl(.x = data,
+                                .y = fit_effort,
+                                .f = ~ rmse(.x$rating, .y %>% 
+                                              fitted() %>% 
+                                              .[, 1])),
+         rmse_causality = map2_dbl(.x = data,
+                                   .y = fit_causality,
+                                   .f = ~ rmse(.x$rating, .y %>% 
+                                                 fitted() %>% 
+                                                 .[, 1])),
+         rmse_effort_causality = map2_dbl(.x = data,
+                                          .y = fit_effort_causality,
+                                          .f = ~ rmse(.x$rating, .y %>% 
+                                                        fitted() %>% 
+                                                        .[, 1])),
+         rmse_heuristic = map2_dbl(.x = data,
+                                   .y = fit_heuristic,
+                                   .f = ~ rmse(.x$rating, .y %>% 
+                                                 fitted() %>% 
+                                                 .[, 1])),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           effort = fit_effort,
+                                           causality = fit_causality,
+                                           effort_causality = fit_effort_causality,
+                                           heuristic = fit_heuristic),
+                                 .f = ~ loo_compare(..1, ..2, ..3, ..4, ..5)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3", "..4", "..5"),
+                             labels = c("baseline",
+                                        "effort", 
+                                        "causality",
+                                        "effort_causality",
+                                        "heuristic")))
+
+# save(list = c("df.exp2.moral.individual_fit"),
+#      file = "data/exp2_moral_individual_fit.RData")
+```
+
+```{r}
+load("data/exp2_moral_individual_fit.RData")
+
+df.exp2.moral.individual_fit %>% 
+  count(best_model) %>% 
+  print_table()
+```
+
+### Correlations 
+
+#### Effort 
+
+```{r}
+df.data = df.exp2.long.effort %>% 
+  group_by(clip) %>% 
+  summarize(mean = mean(rating)) %>% 
+  ungroup() %>% 
+  left_join(df.exp2.model %>% 
+              select(clip, effort),
+            by = "clip")
+
+fit.exp2.effort %>% 
+  fitted(newdata = df.data,
+         re_formula = NA) %>% 
+  as_tibble() %>% 
+  clean_names() %>% 
+  bind_cols(df.data) %>% 
+  summarize(pearson = cor(estimate, mean),
+            rmse = rmse(estimate, mean)) %>% 
+  print_table()
+```
+
+#### Moral
+
+```{r}
+df.data = df.exp2.long.moral %>% 
+  group_by(clip) %>% 
+  summarize(mean = mean(rating)) %>% 
+  ungroup() %>% 
+  left_join(df.exp2.model,
+            by = "clip")
+
+fit.exp2.moral_effort_causality %>% 
+  fitted(newdata = df.data,
+         re_formula = NA) %>% 
+  as_tibble() %>% 
+  clean_names() %>% 
+  bind_cols(df.data) %>% 
+  summarize(pearson = cor(estimate, mean),
+            rmse = rmse(estimate, mean)) %>% 
+  print_table()
+```
+
+#### Effort vs. causality 
+
+```{r}
+df.exp2.model %>% 
+  summarize(r = cor(effort, causality))
+```
+
+## PLOTS 
+
+### Scatter plots 
+
+#### Effort 
+
+```{r fig.height=6, fig.width=6}
+func_scatter_plot(data = df.exp2.long.effort,
+                  model = df.exp2.model,
+                  fit = fit.exp2.effort,
+                  xlabel = "effort model<br><span style='font-size:26pt'>(2 parameters)</span>",
+                  ylabel = "effort judgment",
+                  condition = "effort")
+```
+
+#### Morality  
+
+##### Effort
+
+```{r}
+p1 = func_scatter_plot(data = df.exp2.long.moral,
+                  model = df.exp2.model,
+                  fit = fit.exp2.moral_effort,
+                  xlabel = "effort<br><span style='font-size:26pt'>(2 parameters)</span>",
+                  ylabel = "moral judgment",
+                  condition = "badness")
+p1
+```
+
+##### Causality
+
+```{r}
+p2 = func_scatter_plot(data = df.exp2.long.moral,
+                  model = df.exp2.model,
+                  fit = fit.exp2.moral_causality,
+                  xlabel = "causality<br><span style='font-size:26pt'>(2 parameters)</span>",
+                  ylabel = "moral judgment",
+                  condition = "badness")
+p2 
+```
+
+##### Effort + Causality
+
+```{r}
+p3 = func_scatter_plot(data = df.exp2.long.moral,
+                  model = df.exp2.model,
+                  fit = fit.exp2.moral_effort_causality,
+                  xlabel = "effort + causality<br><span style='font-size:26pt'>(3 parameters)</span>",
+                  ylabel = "moral judgment",
+                  condition = "badness")
+p3
+```
+
+##### Heuristic 
+
+
+```{r}
+p4 = func_scatter_plot(data = df.exp2.long.moral,
+                  model = df.exp2.model,
+                  fit = fit.exp2.moral_heuristic,
+                  xlabel = "kinematic features<br><span style='font-size:26pt'>(9 parameters)</span>",
+                  ylabel = "moral judgment",
+                  condition = "badness")
+p4
+```
+##### Combined
+
+```{r fig.height=6, fig.width=24}
+p1 + p2 + p3  + p4 &
+  plot_layout(nrow = 1) & 
+  plot_annotation(tag_levels = "A") & 
+  theme(plot.tag = element_text(face = "bold"))
+
+ggsave(filename = "../../figures/plots/experiment2_scatter.pdf",
+       width = 24,
+       height = 6)
+```
+
+### Bar plot
+
+```{r fig.height=8, fig.width=24}
+set.seed(1)
+
+df.plot = df.exp2.long
+
+# load trial images 
+func_load_image = function(situation){
+  readPNG(str_c("../../figures/diagrams/experiment2/", situation, ".png"))
+}
+
+df.plot.model.effort = fit.exp2.effort %>% 
+  fitted(newdata = df.exp2.model,
+         re_formula = NA) %>% 
+  as_tibble() %>% 
+  clean_names() %>% 
+  bind_cols(df.exp2.model)
+
+df.plot.model.morality = fit.exp2.moral_effort_causality %>%
+  fitted(newdata = df.exp2.model,
+         re_formula = NA) %>% 
+  as_tibble() %>% 
+  clean_names() %>% 
+  bind_cols(df.exp2.model)
+
+# linking images and clips
+df.images = df.clip_order2 %>% 
+  select(clip, clip_index) %>% 
+  mutate(condition = NA,
+         grob = map(.x = clip, .f = ~ func_load_image(situation = .x)))
+
+# add text 
+df.text = df.clip_order2 %>% 
+  mutate(condition = NA,
+         x = 0.5, 
+         y = 172)
+
+ggplot(data = df.plot,
+       mapping = aes(x = condition,
+                     y = rating,
+                     fill = condition)) + 
+  stat_summary(fun = "mean",
+               geom = "bar",
+               color = "black",
+               alpha = 0.75) +
+  stat_summary(fun.data = mean_cl_boot,
+               geom = "linerange",
+               color = "black") +
+  geom_point(position = position_jitter(width = 0.1, height = 0),
+             shape = 21,
+             alpha = 0.25,
+             show.legend = F) + 
+  geom_point(data = df.plot.model.effort %>% 
+               mutate(condition = "effort"),
+             mapping = aes(x = 1,
+                           y = estimate),
+             shape = 21, 
+             size = 4,
+             show.legend = F) + 
+  geom_point(data = df.plot.model.morality %>% 
+               mutate(condition = "moral"),
+             mapping = aes(x = 2,
+                           y = estimate),
+             shape = 21, 
+             size = 4,
+             show.legend = F) + 
+  geom_custom(data = df.images,
+              mapping = aes(data = grob,
+                            x = -Inf,
+                            y = Inf),
+              grob_fun = function(x) rasterGrob(x,
+                                                interpolate = T,
+                                                vjust = 0,
+                                                hjust = 0)) + 
+  geom_text(data = df.text,
+            mapping = aes(x = x,
+                          y = y, 
+                          label = clip_index),
+            hjust = 0,
+            color = "white",
+            size = 11) +
+  facet_wrap(~ clip_index,
+             ncol = 9) +
+  scale_fill_manual(values = condition_colors) + 
+  scale_y_continuous(breaks = seq(0, 100, 25),
+                     expand = expansion(mult = 0.01)) + 
+  labs(y = "Judgment",
+       x = "") + 
+  coord_cartesian(clip = "off",
+                  ylim = c(0, 110)) + 
+  theme(text = element_text(size = 36),
+        panel.grid.major.y = element_line(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1.1, -0.4),
+        strip.background = element_blank(),
+        strip.text = element_blank(),
+        panel.spacing.y = unit(4.5, "cm"),
+        plot.margin = margin(t = 4.5, l = 0.2, r = 0.2, b = 0.5, unit = "cm"))
+
+ggsave(filename = "../../figures/plots/experiment2_bars.pdf",
+       width = 24,
+       height = 8)
+```
+
+## Tables 
+
+### Model comparison 
+
+```{r}
+df.elpd = loo_compare(fit.exp2.moral_effort,
+                      fit.exp2.moral_causality,
+                      fit.exp2.moral_effort_causality,
+                      fit.exp2.moral_heuristic,
+                      fit.exp2.moral_baseline) %>% 
+  as_tibble(rownames = "model") %>% 
+  mutate(model = factor(model,
+                        levels = c("fit.exp2.moral_effort",
+                                   "fit.exp2.moral_causality",
+                                   "fit.exp2.moral_effort_causality",
+                                   "fit.exp2.moral_heuristic",
+                                   "fit.exp2.moral_baseline"))) %>% 
+  arrange(model)
+
+df.posteriors = fit.exp2.moral_effort %>% 
+  tidy(effects = "fixed",
+       fix.intercept = F,
+       conf.method = "HPDinterval") %>% 
+  mutate(model = "effort") %>% 
+  bind_rows(fit.exp2.moral_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "causality")) %>% 
+  bind_rows(fit.exp2.moral_effort_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "effort + causality")) %>% 
+  bind_rows(fit.exp2.moral_heuristic %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "kinematic features")) %>%
+  bind_rows(fit.exp2.moral_baseline %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "baseline")) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)),
+         label = str_c(estimate, " [", conf.low, ", ", conf.high, "]")) %>% 
+  select(model, term, label) %>% 
+  pivot_wider(names_from = term,
+              values_from = label) %>% 
+  rename(intercept = Intercept)
+
+df.individuals = df.exp2.moral.individual_fit %>% 
+  count(best_model)
+
+
+fun_r_rmse = function(fit, dv){
+  df = fit %>% 
+    fitted(newdata = df.exp2.model,
+           re_formula = NA) %>% 
+    as_tibble() %>% 
+    clean_names()  %>% 
+    bind_cols(df.exp2.means)
+  
+  if(sd(df$estimate) > 0){
+    df = df %>% 
+      summarize(r = cor(.data[[dv]], estimate),
+                rmse = rmse(.data[[dv]], estimate))
+  }else{
+    df = df %>% 
+      summarize(rmse = rmse(.data[[dv]], estimate))
+  }
+  return(df)
+}
+
+df.table = tibble(model = c("effort",
+                            "causality",
+                            "effort + causality",
+                            "kinematic features",
+                            "baseline"),
+                  formula = c(as.character(fit.exp2.moral_effort$formula[[1]][3]),
+                              as.character(fit.exp2.moral_causality$formula[[1]][3]),
+                              as.character(fit.exp2.moral_effort_causality$formula[[1]][3]),
+                              as.character(fit.exp2.moral_heuristic$formula[[1]][3]),
+                              as.character(fit.exp2.moral_baseline$formula[[1]][3])),
+                  r = c(fun_r_rmse(fit = fit.exp2.moral_effort,
+                                   dv = "mean_moral")$r,
+                        fun_r_rmse(fit = fit.exp2.moral_causality,
+                                   dv = "mean_moral")$r,
+                        fun_r_rmse(fit = fit.exp2.moral_effort_causality,
+                                   dv = "mean_moral")$r,
+                        fun_r_rmse(fit = fit.exp2.moral_heuristic,
+                                   dv = "mean_moral")$r,
+                        NA),
+                  rmse = c(fun_r_rmse(fit = fit.exp2.moral_effort,
+                                      dv = "mean_moral")$rmse,
+                           fun_r_rmse(fit = fit.exp2.moral_causality,
+                                      dv = "mean_moral")$rmse,
+                           fun_r_rmse(fit = fit.exp2.moral_effort_causality,
+                                      dv = "mean_moral")$rmse,
+                           fun_r_rmse(fit = fit.exp2.moral_heuristic,
+                                      dv = "mean_moral")$rmse,
+                           fun_r_rmse(fit = fit.exp2.moral_baseline,
+                                      dv = "mean_moral")$rmse),
+                  elpd = df.elpd$elpd_diff,
+                  elpd_se = df.elpd$se_diff) %>% 
+  mutate(across(where(is.numeric), ~ round(., 2))) %>% 
+  mutate(elpd = str_c(elpd, " (", elpd_se,")")) %>% 
+  select(-elpd_se) %>% 
+  left_join(df.posteriors,
+            by = "model") %>% 
+  left_join(df.individuals %>% 
+              mutate(best_model = str_replace(best_model,
+                                              "effort_causality",
+                                              "effort + causality"),
+                     best_model = str_replace(best_model,
+                                              "heuristic",
+                                              "kinematic features")) %>% 
+              rename(model = best_model,
+                     `# best fit` = n)) %>% 
+  rename(effort = effort_empirical) %>% 
+  select(model, intercept, effort, causality, r, rmse, elpd, `# best fit`)
+
+df.table %>% 
+  # print_table("latex")
+  print_table()
+```
+
+### Means and predictions for each trial 
+
+```{r}
+df.exp2.long.moral %>% 
+  group_by(clip_index) %>% 
+  summarize(moral = mean(rating)) %>% 
+  left_join(df.exp2.model %>% 
+              select(clip_index, effort, causality, effort_empirical) %>%
+              mutate(across(-clip_index, ~ . * 100)),
+            by = "clip_index") %>% 
+  rename(model_effort = effort,
+         model_causality = causality,
+         people_effort = effort_empirical,
+         people_moral = moral) %>% 
+  pivot_longer(cols = -clip_index) %>% 
+  pivot_wider(names_from = clip_index) %>% 
+  mutate(name = factor(name, levels = c("model_effort",
+                                        "model_causality",
+                                        "people_effort",
+                                        "people_moral"))) %>% 
+  arrange(name) %>% 
+  print_table()
+```
+
+### Pairwise correlations 
+
+```{r, warning=FALSE, message=FALSE}
+df.exp2.means %>% 
+  select(clip,
+         morality = mean_moral) %>% 
+  ungroup() %>% 
+  left_join(df.exp2.model %>% 
+              rename(effort = effort_empirical,
+                     effort_model = effort,
+                     causality_model = causality),
+            by = c("clip")) %>% 
+  select(-c(clip, clip_index)) %>% 
+  relocate(effort) %>% 
+  correlate() %>% 
+  shave() %>%
+  fashion() %>% 
+  print_table()
+```
+
+### Individual predictors 
+
+```{r}
+df.exp2.predictors = df.exp2.model %>% 
+  mutate(across(where(is.logical), ~ . * 1)) %>% 
+  left_join(df.exp2.means %>% 
+              select(clip, moral = mean_moral),
+            by = "clip") %>% 
+  summarize(across(c(effort:collision_agent_fireball), ~ cor(., moral))) %>% 
+  rename(effort_model = effort, 
+         effort = effort_empirical,
+         causality_model = causality) %>% 
+  pivot_longer(cols = everything(),
+               names_to = "predictor",
+               values_to = "r")
+
+df.exp2.predictors %>% 
+  print_table()
+```
+
+### Heuristic model 
+
+```{r, warning=FALSE}
+fit.exp2.moral_heuristic %>% 
+  tidy(conf.level = 0.95) %>% 
+  filter(effect == "fixed") %>% 
+  mutate(term = str_to_lower(term),
+         term = str_remove(term, "true"),
+         term = str_replace_all(term, "_", " "),
+         term = str_replace(term, fixed("(intercept)"), "intercept")) %>% 
+  select("predictor" = term,
+         "posterior mean" = estimate,
+         "95% credible interval (lower bound)" = conf.low,
+         "95% credible interval (upper bound)" = conf.high) %>% 
+  print_table()
+```
+
+# EXPERIMENT 3
+
+## DATA
+
+### Read in data
+
+```{r, warning=FALSE, message=FALSE}
+# Connect to database file and collect data
+con = dbConnect(SQLite(), dbname = "../../data/empirical/experiment3_anonymized.db");
+df.exp3.data = dbReadTable(con, "moral_dynamics")
+dbDisconnect(con)
+
+# Filter out incomplete trials by users
+df.exp3.data = df.exp3.data %>% 
+  filter(status %in% 3:5) %>% 
+  filter(codeversion %in% c("experiment_3"))
+
+# Collect the demographic data 
+df.exp3.demographics = df.exp3.data$datastring %>% 
+  spread_values(condition = jstring("condition"),
+                age = jstring("questiondata","age"),
+                gender = jstring("questiondata","sex"),
+                feedback = jstring("questiondata","feedback"),
+                question = jstring("questiondata","question_index")) %>%
+  as_tibble() %>% 
+  mutate(time = difftime(df.exp3.data$endhit, df.exp3.data$beginhit, units = "mins"),
+         question = replace_na(question, "responsibility"),
+         age = as.numeric(age)) %>%
+  rename(participant = document.id)
+
+# Structure the trial data 
+df.exp3.long = df.exp3.data$datastring %>% # Grab datastring
+  as.tbl_json() %>% # Structure it as a json
+  enter_object("data") %>% # Access the recorded data sub-object
+  gather_array("order") %>% 
+  enter_object("trialdata") %>% # Access the recorded responses from the trials 
+  gather_object("index") %>% 
+  append_values_string("values") %>% 
+  as_tibble() %>% # Compile everything into a dataframe
+  pivot_wider(names_from = index,
+              values_from = values) %>% 
+  rename(participant = document.id) %>% 
+  mutate(response = as.numeric(response)) %>% 
+  rename(rating = response) %>% 
+  left_join(df.exp3.demographics %>% 
+              select(participant, question),
+            by = "participant")
+
+# find participants who didn't pass the attention check 
+df.exp3.attention = df.exp3.long %>% 
+  filter(clip == "botcheck") %>% 
+  filter((question == "responsibility" & rating > 50) |
+           (question == "effort" & rating > 50) |
+           (question == "causality" & rating < 50) |
+           (question == "badness" & rating > 50))
+
+# exclude participants who didn't pass the attention check 
+df.exp3.long = df.exp3.long %>% 
+  filter(!participant %in% df.exp3.attention$participant,
+         clip != "botcheck") %>% 
+  # mutate(clip = str_remove(clip, "video"),
+  mutate(rating = ifelse(question == "causality",
+                           100 - rating, # flip causality 
+                           rating)) %>% 
+  select(participant, clip, order, question, rating, -condition) %>% 
+  arrange(participant, clip)
+
+# add a clip_index 
+df.clip_order3 = df.exp3.long %>% 
+  group_by(clip) %>% 
+  summarize(rating = mean(rating)) %>% 
+  arrange(rating) %>% 
+  mutate(clip_index = 1:n()) %>% 
+  ungroup() %>% 
+  select(-rating)
+
+df.exp3.long = df.exp3.long %>% 
+  left_join(df.clip_order3,
+            by = "clip")
+
+# mean judgments per clip 
+df.exp3.means = df.exp3.long %>% 
+  group_by(question, clip, clip_index) %>% 
+  summarize(value = mean(rating)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = question,
+              values_from = value) %>% 
+  arrange(clip_index)
+
+# read in model predictions from best-fitting effort and causality model (determined below)
+df.exp3.model = df.model.effort %>% 
+  filter(experiment == 3) %>% 
+  select(clip, effort_model = `effort_0.56`) %>% 
+  left_join(df.model.causality %>% 
+              filter(experiment == 3) %>% 
+              select(clip,
+                     causality_model = `causality_1.7`),
+            by = "clip") %>% 
+  left_join(df.model.features %>% 
+              filter(experiment == 3),
+            by = "clip") %>% 
+  left_join(df.exp3.means,
+            by = c("clip")) %>% 
+  mutate(across(c(distance,
+                  duration,
+                  effort_model),
+                ~ . / max(.)),
+         across(c(effort,
+                  causality,
+                  responsibility,
+                  badness),
+                ~ . / 100)) %>% 
+  relocate(clip_index, .after = clip) %>% 
+  arrange(clip_index)
+```
+
+### Demographics 
+
+```{r}
+df.exp3.demographics %>% 
+  summarize(age_mean = mean(age),
+            age_sd = sd(age),
+            n_female = sum(gender == "female"),
+            n_male = sum(gender == "male"),
+            n_other = sum(!gender %in% c("female", "male")),
+            n = n(),
+            time_mean = mean(time),
+            time_sd = sd(time),
+            n_excluded = nrow(df.exp3.attention)) %>% 
+  print_table(digits = 1)
+```
+
+### Feedback 
+
+```{r}
+df.exp3.demographics %>% 
+  select(participant, time, question, feedback) %>% 
+  mutate(time = round(time, 2)) %>% 
+  datatable(height = 800)
+```
+
+## STATS 
+
+### Find best-fitting effort and causality model 
+
+```{r}
+df.fit = df.exp3.means %>% 
+  select(clip, causality, effort) %>% 
+  left_join(df.model.effort %>% 
+              filter(experiment == 3) %>% 
+              select(-experiment),
+            by = "clip") %>% 
+  left_join(df.model.causality %>% 
+              filter(experiment == 3) %>% 
+              select(-experiment),
+            by = "clip") %>% 
+  mutate(across(contains("effort_"), ~ . / max(.)))
+
+predictor_names = df.fit %>% 
+  select(contains("effort_"), contains("causality_")) %>% 
+  names()
+
+for (i in predictor_names){
+  df.fit = df.fit %>%
+    mutate("{i}" := lm(formula = str_c(str_extract(i, "[a-z]+"), " ~ ", i),
+                       data = df.fit)$fitted.values)
+}
+
+df.fit %>% 
+  summarize(across(contains("effort_"), list(rmse = ~ rmse(effort, .x),
+                                             r = ~ cor(effort, .x))),
+            across(contains("causality_"), list(rmse = ~ rmse(causality, .x),
+                                             r = ~ cor(causality, .x)))) %>% 
+  pivot_longer(cols = everything()) %>% 
+  separate(name,
+           into = c("variable", "parameter", "measure"),
+           sep = "_") %>% 
+  pivot_wider(names_from = measure,
+              values_from = value) %>% 
+  group_by(variable) %>% 
+  filter(rmse == min(rmse)) %>%
+  ungroup()
+```
+
+### Bayesian models 
+
+#### Effort 
+
+```{r}
+df.data = df.exp3.long %>% 
+  filter(question == "effort") %>% 
+  left_join(df.exp3.model,
+            by = c("clip", "clip_index"))
+
+fit.exp3.effort = brm(
+  formula = rating ~ 1 + effort_model + (1 + effort_model | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.effort",
+  seed = 1)
+```
+
+#### Causality 
+
+```{r}
+df.data = df.exp3.long %>% 
+  filter(question == "causality") %>% 
+  left_join(df.exp3.model,
+            by = c("clip", "clip_index"))
+
+fit.exp3.causality = brm(
+  formula = rating ~ 1 + causality_model + (1 + causality_model | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.causality",
+  seed = 1)
+```
+
+#### Responsibility 
+
+##### Overall
+
+```{r}
+df.data = df.exp3.long %>% 
+  filter(question == "responsibility") %>% 
+  left_join(df.exp3.model,
+            by = c("clip", "clip_index"))
+
+# Fit the models 
+fit.exp3.responsibility_baseline = brm(
+  formula = rating ~ 1 + (1 | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.responsibility_baseline",
+  seed = 1)
+
+fit.exp3.responsibility_effort = brm(
+  formula = rating ~ 1 + effort + (1 + effort | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.responsibility_effort",
+  seed = 1)
+
+fit.exp3.responsibility_causality = brm(
+  formula = rating ~ 1 + causality + (1 + causality | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.responsibility_causality",
+  seed = 1)
+
+fit.exp3.responsibility_effort_causality = brm(
+  formula = rating ~ 1 + effort + causality + (1 + effort + causality | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.responsibility_effort_causality",
+  seed = 1)
+
+fit.exp3.responsibility_heuristic = brm(
+  formula = rating ~ 1 + 
+    distance + 
+    duration + 
+    frequency + 
+    agent_moving + 
+    patient_moving + 
+    fireball_moving + 
+    collision_agent_patient + 
+    collision_agent_fireball + 
+    (1 | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.responsibility_heuristic",
+  seed = 1)
+
+# Model comparison 
+
+fit.exp3.responsibility_baseline = add_criterion(
+  fit.exp3.responsibility_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.responsibility_baseline")
+
+fit.exp3.responsibility_effort = add_criterion(
+  fit.exp3.responsibility_effort,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.responsibility_effort")
+
+fit.exp3.responsibility_causality = add_criterion(
+  fit.exp3.responsibility_causality,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.responsibility_causality")
+
+fit.exp3.responsibility_effort_causality = add_criterion(
+  fit.exp3.responsibility_effort_causality,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.responsibility_effort_causality")
+
+fit.exp3.responsibility_heuristic = add_criterion(
+  fit.exp3.responsibility_heuristic,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.responsibility_heuristic")
+
+# model comparison 
+loo_compare(fit.exp3.responsibility_effort,
+            fit.exp3.responsibility_causality,
+            fit.exp3.responsibility_effort_causality,
+            fit.exp3.responsibility_heuristic,
+            fit.exp3.responsibility_baseline)
+```
+
+##### Individual Participants
+
+```{r, eval=FALSE}
+
+df.data = df.exp3.long %>% 
+  filter(question == "responsibility") %>% 
+  left_join(df.exp3.model,
+            by = c("clip", "clip_index"))
+
+# initial model fits (used for compilation)
+fit.exp3.responsibility_individual_baseline = 
+  brm(formula = rating ~ 1, 
+      data = df.data %>% 
+        filter(participant == 2),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.responsibility_individual_baseline"))
+
+fit.exp3.responsibility_individual_effort = 
+  brm(formula = rating ~ 1 + effort, 
+      data = df.data %>% 
+        filter(participant == 2),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.responsibility_individual_effort"))
+
+fit.exp3.responsibility_individual_causality = 
+  brm(formula = rating ~ 1 + causality, 
+      data = df.data %>% 
+        filter(participant == 2),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.responsibility_individual_causality"))
+
+fit.exp3.responsibility_individual_effort_causality = 
+  brm(formula = rating ~ 1 + effort + causality,
+      data = df.data %>% 
+        filter(participant == 2),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.responsibility_individual_effort_causality"))
+
+fit.exp3.responsibility_individual_heuristic = 
+  brm(formula = rating ~ 1 + 
+        distance + 
+        duration + 
+        frequency + 
+        agent_moving + 
+        patient_moving + 
+        fireball_moving + 
+        collision_agent_patient + 
+        collision_agent_fireball,
+      data = df.data %>% 
+        filter(participant == 2),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.responsibility_individual_heuristic"))
+
+# update model fits for different participants
+df.exp3.responsibility.individual_fit = df.data %>%
+  group_by(participant) %>%
+  nest() %>%
+  ungroup() %>% 
+  # fit model for each participant
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp3.responsibility_individual_baseline,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_effort = map(.x = data,
+                          .f = ~ update(fit.exp3.responsibility_individual_effort,
+                                        newdata = .x,
+                                        seed = 1)),
+         fit_causality = map(.x = data,
+                             .f = ~ update(fit.exp3.responsibility_individual_causality,
+                                           newdata = .x,
+                                           seed = 1)),
+         fit_effort_causality = map(.x = data,
+                                    .f = ~ update(fit.exp3.responsibility_individual_effort_causality,
+                                                  newdata = .x,
+                                                  seed = 1)),
+         fit_heuristic = map(.x = data,
+                             .f = ~ update(fit.exp3.responsibility_individual_heuristic,
+                                           newdata = .x,
+                                           seed = 1))) %>% 
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            ~ add_criterion(.x,
+                                            criterion = c("loo"))),
+         fit_effort = map(.x = fit_effort,
+                          ~ add_criterion(.x,
+                                          criterion = c("loo"))),
+         fit_causality = map(.x = fit_causality,
+                             ~ add_criterion(.x,
+                                             criterion = c("loo"))),
+         fit_effort_causality = map(.x = fit_effort_causality,
+                                    ~ add_criterion(.x,
+                                                    criterion = c("loo"))),
+         fit_heuristic = map(.x = fit_heuristic,
+                             ~ add_criterion(.x,
+                                             criterion = c("loo"))),
+         r_effort = map2_dbl(.x = data,
+                             .y = fit_effort,
+                             .f = ~ cor(.x$rating, .y %>% 
+                                          fitted() %>% 
+                                          .[, 1])),
+         r_causality = map2_dbl(.x = data,
+                                .y = fit_causality,
+                                .f = ~ cor(.x$rating, .y %>% 
+                                             fitted() %>% 
+                                             .[, 1])),
+         r_effort_causality = map2_dbl(.x = data,
+                                       .y = fit_effort_causality,
+                                       .f = ~ cor(.x$rating, .y %>% 
+                                                    fitted() %>% 
+                                                    .[, 1])),
+         r_heuristic = map2_dbl(.x = data,
+                                .y = fit_heuristic,
+                                .f = ~ cor(.x$rating, .y %>% 
+                                             fitted() %>% 
+                                             .[, 1])),
+         rmse_effort = map2_dbl(.x = data,
+                                .y = fit_effort,
+                                .f = ~ rmse(.x$rating, .y %>% 
+                                              fitted() %>% 
+                                              .[, 1])),
+         rmse_causality = map2_dbl(.x = data,
+                                   .y = fit_causality,
+                                   .f = ~ rmse(.x$rating, .y %>% 
+                                                 fitted() %>% 
+                                                 .[, 1])),
+         rmse_effort_causality = map2_dbl(.x = data,
+                                          .y = fit_effort_causality,
+                                          .f = ~ rmse(.x$rating, .y %>% 
+                                                        fitted() %>% 
+                                                        .[, 1])),
+         rmse_heuristic = map2_dbl(.x = data,
+                                   .y = fit_heuristic,
+                                   .f = ~ rmse(.x$rating, .y %>% 
+                                                 fitted() %>% 
+                                                 .[, 1])),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           effort = fit_effort,
+                                           causality = fit_causality,
+                                           effort_causality = fit_effort_causality,
+                                           heuristic = fit_heuristic),
+                                 .f = ~ loo_compare(..1, ..2, ..3, ..4, ..5)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3", "..4", "..5"),
+                             labels = c("baseline",
+                                        "effort", 
+                                        "causality",
+                                        "effort_causality",
+                                        "heuristic")))
+
+save(list = c("df.exp3.responsibility.individual_fit"),
+     file = "data/exp3_responsibility_individual_fit.RData")
+```
+
+```{r}
+load("data/exp3_responsibility_individual_fit.RData")
+
+df.exp3.responsibility.individual_fit %>% 
+  count(best_model) %>% 
+  print_table()
+```
+
+#### Badness 
+
+##### Overall
+
+```{r}
+df.data = df.exp3.long %>% 
+  filter(question == "badness") %>% 
+  left_join(df.exp3.model,
+            by = c("clip", "clip_index"))
+
+# Fit the models 
+fit.exp3.badness_baseline = brm(
+  formula = rating ~ 1 + (1 | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.badness_baseline",
+  seed = 1)
+
+fit.exp3.badness_effort = brm(
+  formula = rating ~ 1 + effort + (1 + effort | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.badness_effort",
+  seed = 1)
+
+fit.exp3.badness_causality = brm(
+  formula = rating ~ 1 + causality + (1 + causality | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.badness_causality",
+  seed = 1)
+
+fit.exp3.badness_effort_causality = brm(
+  formula = rating ~ 1 + effort + causality + (1 + effort + causality | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.badness_effort_causality",
+  seed = 1)
+
+fit.exp3.badness_heuristic = brm(
+  formula = rating ~ 1 + 
+    distance + 
+    duration + 
+    frequency + 
+    agent_moving + 
+    patient_moving + 
+    fireball_moving + 
+    collision_agent_patient + 
+    collision_agent_fireball + 
+    (1 | participant),
+  data = df.data, 
+  file = "cache/fit.exp3.badness_heuristic",
+  seed = 1)
+
+# Model comparison 
+
+fit.exp3.badness_baseline = add_criterion(
+  fit.exp3.badness_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.badness_baseline")
+
+fit.exp3.badness_effort = add_criterion(
+  fit.exp3.badness_effort,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.badness_effort")
+
+fit.exp3.badness_causality = add_criterion(
+  fit.exp3.badness_causality,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.badness_causality")
+
+fit.exp3.badness_effort_causality = add_criterion(
+  fit.exp3.badness_effort_causality,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.badness_effort_causality")
+
+fit.exp3.badness_heuristic = add_criterion(
+  fit.exp3.badness_heuristic,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.badness_heuristic")
+
+# model comparison 
+loo_compare(fit.exp3.badness_effort,
+            fit.exp3.badness_causality,
+            fit.exp3.badness_effort_causality,
+            fit.exp3.badness_heuristic,
+            fit.exp3.badness_baseline)
+```
+
+##### Individual Participants
+
+```{r, eval=FALSE}
+df.data = df.exp3.long %>% 
+  filter(question == "badness") %>% 
+  left_join(df.exp3.model,
+            by = c("clip", "clip_index"))
+
+# initial model fits (used for compilation)
+fit.exp3.badness_individual_baseline = 
+  brm(formula = rating ~ 1, 
+      data = df.data %>% 
+        filter(participant == 61),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.badness_individual_baseline"))
+
+fit.exp3.badness_individual_effort = 
+  brm(formula = rating ~ 1 + effort, 
+      data = df.data %>% 
+        filter(participant == 61),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.badness_individual_effort"))
+
+fit.exp3.badness_individual_causality = 
+  brm(formula = rating ~ 1 + causality, 
+      data = df.data %>% 
+        filter(participant == 61),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.badness_individual_causality"))
+
+fit.exp3.badness_individual_effort_causality = 
+  brm(formula = rating ~ 1 + effort + causality,
+      data = df.data %>% 
+        filter(participant == 61),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.badness_individual_effort_causality"))
+
+fit.exp3.badness_individual_heuristic = 
+  brm(formula = rating ~ 1 + 
+        distance + 
+        duration + 
+        frequency + 
+        agent_moving + 
+        patient_moving + 
+        fireball_moving + 
+        collision_agent_patient + 
+        collision_agent_fireball,
+      data = df.data %>% 
+        filter(participant == 61),
+      cores = 4,
+      chains = 4,
+      iter = 4000,
+      seed = 1,
+      file = str_c("cache/fit.exp3.badness_individual_heuristic"))
+
+# update model fits for different participants
+df.exp3.badness.individual_fit = df.data %>%
+  group_by(participant) %>%
+  nest() %>%
+  ungroup() %>% 
+  # fit model for each participant
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp3.badness_individual_baseline,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_effort = map(.x = data,
+                          .f = ~ update(fit.exp3.badness_individual_effort,
+                                        newdata = .x,
+                                        seed = 1)),
+         fit_causality = map(.x = data,
+                             .f = ~ update(fit.exp3.badness_individual_causality,
+                                           newdata = .x,
+                                           seed = 1)),
+         fit_effort_causality = map(.x = data,
+                                    .f = ~ update(fit.exp3.badness_individual_effort_causality,
+                                                  newdata = .x,
+                                                  seed = 1)),
+         fit_heuristic = map(.x = data,
+                             .f = ~ update(fit.exp3.badness_individual_heuristic,
+                                           newdata = .x,
+                                           seed = 1))) %>% 
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            ~ add_criterion(.x,
+                                            criterion = c("loo"))),
+         fit_effort = map(.x = fit_effort,
+                          ~ add_criterion(.x,
+                                          criterion = c("loo"))),
+         fit_causality = map(.x = fit_causality,
+                             ~ add_criterion(.x,
+                                             criterion = c("loo"))),
+         fit_effort_causality = map(.x = fit_effort_causality,
+                                    ~ add_criterion(.x,
+                                                    criterion = c("loo"))),
+         fit_heuristic = map(.x = fit_heuristic,
+                             ~ add_criterion(.x,
+                                             criterion = c("loo"))),
+         r_effort = map2_dbl(.x = data,
+                             .y = fit_effort,
+                             .f = ~ cor(.x$rating, .y %>% 
+                                          fitted() %>% 
+                                          .[, 1])),
+         r_causality = map2_dbl(.x = data,
+                                .y = fit_causality,
+                                .f = ~ cor(.x$rating, .y %>% 
+                                             fitted() %>% 
+                                             .[, 1])),
+         r_effort_causality = map2_dbl(.x = data,
+                                       .y = fit_effort_causality,
+                                       .f = ~ cor(.x$rating, .y %>% 
+                                                    fitted() %>% 
+                                                    .[, 1])),
+         r_heuristic = map2_dbl(.x = data,
+                                .y = fit_heuristic,
+                                .f = ~ cor(.x$rating, .y %>% 
+                                             fitted() %>% 
+                                             .[, 1])),
+         rmse_effort = map2_dbl(.x = data,
+                                .y = fit_effort,
+                                .f = ~ rmse(.x$rating, .y %>% 
+                                              fitted() %>% 
+                                              .[, 1])),
+         rmse_causality = map2_dbl(.x = data,
+                                   .y = fit_causality,
+                                   .f = ~ rmse(.x$rating, .y %>% 
+                                                 fitted() %>% 
+                                                 .[, 1])),
+         rmse_effort_causality = map2_dbl(.x = data,
+                                          .y = fit_effort_causality,
+                                          .f = ~ rmse(.x$rating, .y %>% 
+                                                        fitted() %>% 
+                                                        .[, 1])),
+         rmse_heuristic = map2_dbl(.x = data,
+                                   .y = fit_heuristic,
+                                   .f = ~ rmse(.x$rating, .y %>% 
+                                                 fitted() %>% 
+                                                 .[, 1])),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           effort = fit_effort,
+                                           causality = fit_causality,
+                                           effort_causality = fit_effort_causality,
+                                           heuristic = fit_heuristic),
+                                 .f = ~ loo_compare(..1, ..2, ..3, ..4, ..5)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3", "..4", "..5"),
+                             labels = c("baseline",
+                                        "effort", 
+                                        "causality",
+                                        "effort_causality",
+                                        "heuristic")))
+
+save(list = c("df.exp3.badness.individual_fit"),
+     file = "data/exp3_badness_individual_fit.RData")
+```
+
+```{r}
+load("data/exp3_badness_individual_fit.RData")
+
+df.exp3.badness.individual_fit %>% 
+  count(best_model) %>% 
+  print_table()
+```
+
+### Model predictions 
+
+```{r}
+fun_model_predictions_exp3 = function(fit){
+  fit %>%
+    fitted(newdata = df.exp3.model,
+           re_formula = NA) %>%
+    as_tibble() %>%
+    bind_cols(df.exp3.model) %>% 
+    clean_names()
+}
+
+df.exp3.model.causality = fun_model_predictions_exp3(fit.exp3.causality)
+df.exp3.model.effort = fun_model_predictions_exp3(fit.exp3.effort)
+df.exp3.model.badness_effort = fun_model_predictions_exp3(fit.exp3.badness_effort)
+df.exp3.model.responsibility_effort_causality = 
+  fun_model_predictions_exp3(fit.exp3.responsibility_effort_causality)
+
+df.exp3.model.all = df.exp3.model.causality %>% 
+  select(clip, estimate, q2_5, q97_5) %>% 
+  mutate(question = "causality") %>% 
+  bind_rows(df.exp3.model.effort %>% 
+              select(clip, estimate, q2_5, q97_5) %>% 
+              mutate(question = "effort")) %>% 
+  bind_rows(df.exp3.model.badness_effort %>% 
+              select(clip, estimate, q2_5, q97_5) %>% 
+              mutate(question = "badness")) %>% 
+  bind_rows(df.exp3.model.responsibility_effort_causality %>% 
+              select(clip, estimate, q2_5, q97_5) %>% 
+              mutate(question = "responsibility"))
+```
+
+### Correlations 
+
+#### Effort model vs. effort people 
+
+```{r}
+df.data = df.exp3.long %>% 
+  filter(question == "effort") %>% 
+  group_by(clip) %>% 
+  summarize(mean = mean(rating)) %>% 
+  ungroup() %>% 
+  left_join(df.exp3.model,
+            by = c("clip"))
+
+fit.exp3.effort %>% 
+  fitted(newdata = df.data,
+         re_formula = NA) %>% 
+  as_tibble() %>% 
+  clean_names() %>% 
+  bind_cols(df.data) %>% 
+  summarize(pearson = cor(estimate, mean),
+            rmse = rmse(estimate, mean)) %>% 
+  print_table()
+```
+
+#### Causality model vs. causality people 
+
+```{r}
+df.data = df.exp3.long %>% 
+  filter(question == "causality") %>% 
+  group_by(clip) %>% 
+  summarize(mean = mean(rating)) %>% 
+  ungroup() %>% 
+  left_join(df.exp3.model,
+            by = c("clip"))
+
+fit.exp3.causality %>% 
+  fitted(newdata = df.data,
+         re_formula = NA) %>% 
+  as_tibble() %>% 
+  clean_names() %>% 
+  bind_cols(df.data) %>% 
+  summarize(pearson = cor(estimate, mean),
+            rmse = rmse(estimate, mean)) %>% 
+  print_table()
+```
+
+## PLOTS 
+
+### Bar plot 
+
+```{r fig.height=8, fig.width=24}
+# data
+df.plot = df.exp3.long %>% 
+  mutate(question = factor(question,
+                           levels = c("effort",
+                                      "causality",
+                                      "responsibility",
+                                      "badness")))
+
+# model 
+df.model = df.exp3.model.all %>% 
+  left_join(df.clip_order3,
+            by = "clip")
+
+# linking images and clips
+df.images = df.exp3.model %>% 
+  select(clip, clip_index) %>% 
+  mutate(question = NA,
+         grob = map(.x = clip,
+                    .f = ~ readPNG(str_c("../../figures/diagrams/experiment3/", 
+                                         .x, ".png"))))
+
+# add text 
+df.text = df.images %>% 
+  select(clip, clip_index) %>% 
+  mutate(question = NA,
+         x = 0.5, 
+         y = 125)
+
+ggplot(data = df.plot,
+       mapping = aes(x = question,
+                     y = rating,
+                     fill = question)) + 
+  stat_summary(fun = "mean",
+               geom = "bar",
+               color = "black",
+               alpha = 0.75) + 
+  stat_summary(fun.data = "mean_cl_boot",
+               geom = "linerange",
+               color = "black") + 
+  geom_point(shape = 21,
+             alpha = 0.25,
+             position = position_jitter(width = 0.1, height = 0),
+             show.legend = F) + 
+  geom_point(data = df.model,
+             mapping = aes(y = estimate),
+             show.legend = F,
+             size = 4,
+             shape = 21) +
+  facet_wrap(~ clip_index, 
+             ncol = 10) + 
+  geom_custom(data = df.images,
+              mapping = aes(data = grob,
+                            x = -Inf,
+                            y = Inf),
+              grob_fun = function(x) rasterGrob(x,
+                                                interpolate = T,
+                                                vjust = 0,
+                                                hjust = 0)) + 
+  geom_text(data = df.text,
+            mapping = aes(x = x,
+                          y = y, 
+                          label = clip_index),
+            hjust = 0,
+            color = "white",
+            size = 11) +
+  scale_fill_manual(breaks = c("effort",
+                               "causality",
+                               "responsibility",
+                               "badness"),
+                    values = condition_colors) + 
+  scale_y_continuous(breaks = seq(0, 100, 25),
+                     expand = expansion(mult = 0.01)) + 
+  labs(y = "Judgment",
+       x = "") + 
+  coord_cartesian(clip = "off",
+                  ylim = c(0, 110)) + 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        strip.background = element_blank(),
+        strip.text = element_blank(),
+        panel.spacing.y = unit(4, "cm"),
+        plot.margin = margin(t = 4, l = 0.2, r = 0.2, b = 0.1, unit = "cm"),
+        axis.title.y = element_text(size = 36),
+        legend.text = element_text(size = 30),
+        legend.title = element_text(size = 30))
+
+ggsave(filename = "../../figures/plots/experiment3_bars.pdf",
+       width = 24,
+       height = 8)
+```
+
+### Scatter plots 
+
+#### Effort 
+
+```{r fig.height=6, fig.width=6}
+set.seed(1)
+p1 = func_scatter_plot(data = df.exp3.long %>% 
+                         filter(question == "effort"),
+                       model = df.exp3.model,
+                       fit = fit.exp3.effort,
+                       xlabel = "effort model<br><span style='font-size:26pt'>(2 parameters)</span>",
+                       ylabel = "effort judgment",
+                       condition = "effort")
+p1
+```
+#### Causality 
+
+```{r fig.height=6, fig.width=6}
+set.seed(1)
+p2 = func_scatter_plot(data = df.exp3.long %>% 
+                         filter(question == "causality"),
+                       model = df.exp3.model,
+                       fit = fit.exp3.causality,
+                       xlabel = "causality model<br><span style='font-size:26pt'>(2 parameters)</span>",
+                       ylabel = "causality judgment",
+                       condition = "causality")
+
+p2
+```
+#### Effort & Causality 
+
+```{r fig.height=6, fig.width=12}
+p1 + p2 +
+plot_annotation(tag_levels = "A") & 
+  theme(plot.tag = element_text(face = "bold"))
+
+ggsave(filename = "../../figures/plots/experiment3_scatter_effort_causality.pdf",
+       width = 12,
+       height = 6)
+```
+
+
+#### Badness 
+
+```{r fig.height=6, fig.width=24}
+set.seed(1)
+p1 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "badness"),
+  model = df.exp3.model,
+  fit = fit.exp3.badness_effort,
+  xlabel = "effort<br><span style='font-size:26pt'>(2 parameters)</span>",
+  ylabel = "badness judgment",
+  condition = "badness")
+
+p2 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "badness"),
+  model = df.exp3.model,
+  fit = fit.exp3.badness_causality,
+  xlabel = "causality<br><span style='font-size:26pt'>(2 parameters)</span>",
+  ylabel = "badness judgment",
+  condition = "badness")
+
+p3 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "badness"),
+  model = df.exp3.model,
+  fit = fit.exp3.badness_effort_causality,
+  xlabel = "effort + causality<br><span style='font-size:26pt'>(3 parameters)</span>",
+  ylabel = "badness judgment",
+  condition = "badness")
+
+p4 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "badness"),
+  model = df.exp3.model,
+  fit = fit.exp3.badness_heuristic,
+  xlabel = "kinematic features<br><span style='font-size:26pt'>(9 parameters)</span>",
+  ylabel = "badness judgment",
+  condition = "badness")
+
+p1 + p2 + p3 + p4 &
+  plot_layout(nrow = 1) & 
+  plot_annotation(tag_levels = "A") & 
+  theme(plot.tag = element_text(face = "bold"))
+
+ggsave(filename = "../../figures/plots/experiment3_scatter_badness.pdf",
+       width = 24,
+       height = 6)
+```
+
+#### Responsibility 
+
+```{r fig.height=6, fig.width=24}
+set.seed(1)
+p1 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "responsibility"),
+  model = df.exp3.model,
+  fit = fit.exp3.responsibility_effort,
+  xlabel = "effort<br><span style='font-size:26pt'>(2 parameters)</span>",
+  ylabel = "responsibility judgment",
+  condition = "responsibility")
+
+p2 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "responsibility"),
+  model = df.exp3.model,
+  fit = fit.exp3.responsibility_causality,
+  xlabel = "causality<br><span style='font-size:26pt'>(2 parameters)</span>",
+  ylabel = "responsibility judgment",
+  condition = "responsibility")
+
+p3 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "responsibility"),
+  model = df.exp3.model,
+  fit = fit.exp3.responsibility_effort_causality,
+  xlabel = "effort + causality<br><span style='font-size:26pt'>(3 parameters)</span>",
+  ylabel = "responsibility judgment",
+  condition = "responsibility")
+
+p4 = func_scatter_plot(
+  data = df.exp3.long %>% 
+    filter(question == "responsibility"),
+  model = df.exp3.model,
+  fit = fit.exp3.responsibility_heuristic,
+  xlabel = "kinematic features<br><span style='font-size:26pt'>(9 parameters)</span>",
+  ylabel = "responsibility judgment",
+  condition = "responsibility")
+
+p1 + p2 + p3 + p4 &
+  plot_layout(nrow = 1) & 
+  plot_annotation(tag_levels = "A") & 
+  theme(plot.tag = element_text(face = "bold"))
+
+ggsave(filename = "../../figures/plots/experiment3_scatter_responsibility.pdf",
+       width = 24,
+       height = 6)
+```
+
+### Heuristic posterior 
+
+```{r fig.height=8, fig.width=12, warning=FALSE}
+predictors = c("Intercept",
+               "distance",
+               "duration",
+               "frequency",
+               "agent_moving",
+               "patient_moving",
+               "fireball_moving",
+               "collision_agent_patient",
+               "collision_agent_fireball")
+
+df.plot = fit.exp2.moral_heuristic %>% 
+  posterior_samples() %>% 
+  select(contains("b_")) %>% 
+  mean_hdi() %>% 
+  mutate(model = "Experiment 2: Badness") %>% 
+  bind_rows(fit.exp3.responsibility_heuristic %>% 
+  posterior_samples() %>% 
+  select(contains("b_")) %>% 
+  mean_hdi() %>% 
+  mutate(model = "Experiment 3: Responsibility")) %>% 
+  bind_rows(fit.exp3.badness_heuristic %>% 
+  posterior_samples() %>% 
+  select(contains("b_")) %>% 
+  mean_hdi() %>% 
+  mutate(model = "Experiment 3: Badness")) %>% 
+  select(-c(.width, .point, .interval)) %>% 
+  pivot_longer(cols = -model) %>% 
+  mutate(name = str_remove(name, "b_")) %>% 
+  separate(name,
+           into = c("predictor", "index"),
+           sep = "\\.") %>% 
+  replace_na(list(index = "mean")) %>% 
+  pivot_wider(names_from = index,
+              values_from = value) %>% 
+  mutate(predictor = str_remove(predictor, "TRUE"),
+         predictor = factor(predictor,
+                            levels = predictors,
+                            labels = predictors %>% 
+                              str_to_lower() %>% 
+                              str_replace_all("_", " ")),
+         model = factor(model,
+                        levels = c("Experiment 2: Badness",
+                                   "Experiment 3: Responsibility",
+                                   "Experiment 3: Badness"),
+                        labels = c("Exp 2: Badness",
+                                   "Exp 3: Responsibility",
+                                   "Exp 3: Badness")))
+ggplot(data = df.plot,
+         mapping = aes(x = mean,
+                       y = predictor,
+                       xmin = lower,
+                       xmax = upper,
+                       group = model,
+                       # color = model,
+                       fill = model)) + 
+  geom_vline(xintercept = 0,
+             linetype = 2) + 
+  geom_pointinterval(position = position_dodge2(width = 0.9,
+                                                reverse = T),
+                     point_size = 4,
+                     shape = 21,
+                     stroke = 1,
+                     color = "black") +
+  geom_hline(yintercept = seq(from = 1.5, by = 1, length.out = 8),
+             alpha = 0.1) + 
+  scale_y_discrete(limits = rev) +
+  scale_x_continuous(breaks = seq(-75, 75, 25)) + 
+  scale_fill_grey(start = 1, end = 0.2) + 
+  labs(x = "posterior mean with 95% credible interval") + 
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        legend.key.width = unit(1, "cm"), 
+        axis.title.y = element_blank()) +
+  guides(color = guide_legend(override.aes = list(size = 10)))
+
+ggsave(filename = "../../figures/plots/heuristic_posterior.pdf",
+       width = 12,
+       height = 8)
+```
+
+
+## Tables
+
+### Pairwise correlations
+
+#### MDM and Judgments 
+
+```{r, message=FALSE}
+df.exp3.model %>% 
+  select(effort_model,
+         causality_model,
+         effort,
+         causality,
+         responsibility,
+         badness) %>% 
+  correlate() %>% 
+  shave() %>% 
+  fashion() %>% 
+  print_table()
+```
+
+#### Kinematic features 
+
+```{r, warning=FALSE, message=FALSE}
+df.exp3.model %>% 
+  select(distance:collision_agent_fireball, effort, causality) %>% 
+  correlate() %>% 
+  shave() %>% 
+  fashion() %>% 
+  print_table()
+```
+
+
+### Model comparison 
+
+#### Responsibility 
+
+```{r}
+df.elpd = loo_compare(fit.exp3.responsibility_effort,
+                      fit.exp3.responsibility_causality,
+                      fit.exp3.responsibility_effort_causality,
+                      fit.exp3.responsibility_heuristic,
+                      fit.exp3.responsibility_baseline) %>% 
+  as_tibble(rownames = "model") %>% 
+  mutate(model = factor(model,
+                        levels = c("fit.exp3.responsibility_effort",
+                                   "fit.exp3.responsibility_causality",
+                                   "fit.exp3.responsibility_effort_causality",
+                                   "fit.exp3.responsibility_heuristic",
+                                   "fit.exp3.responsibility_baseline"))) %>% 
+  arrange(model)
+
+df.posteriors = fit.exp3.responsibility_effort %>% 
+  tidy(effects = "fixed",
+       fix.intercept = F,
+       conf.method = "HPDinterval") %>% 
+  mutate(model = "effort") %>% 
+  bind_rows(fit.exp3.responsibility_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "causality")) %>% 
+  bind_rows(fit.exp3.responsibility_effort_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "effort + causality")) %>% 
+  bind_rows(fit.exp3.responsibility_heuristic %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "kinematic features")) %>%
+  bind_rows(fit.exp3.responsibility_baseline %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "baseline")) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)),
+         label = str_c(estimate, " [", conf.low, ", ", conf.high, "]")) %>% 
+  select(model, term, label) %>% 
+  pivot_wider(names_from = term,
+              values_from = label) %>% 
+  rename(intercept = Intercept)
+
+df.individuals = df.exp3.responsibility.individual_fit %>% 
+  count(best_model)
+
+
+fun_r_rmse = function(fit, dv){
+  df = fit %>% 
+    fitted(newdata = df.exp3.model,
+           re_formula = NA) %>% 
+    as_tibble() %>% 
+    clean_names()  %>% 
+    bind_cols(df.exp3.means)
+  
+  if(sd(df$estimate) > 0){
+    df = df %>% 
+      summarize(r = cor(.data[[dv]], estimate),
+                rmse = rmse(.data[[dv]], estimate))
+  }else{
+    df = df %>% 
+      summarize(rmse = rmse(.data[[dv]], estimate))
+  }
+  return(df)
+}
+
+df.table = tibble(model = c("effort",
+                            "causality",
+                            "effort + causality",
+                            "kinematic features",
+                            "baseline"),
+                  formula = c(as.character(fit.exp3.responsibility_effort$formula[[1]][3]),
+                              as.character(fit.exp3.responsibility_causality$formula[[1]][3]),
+                              as.character(fit.exp3.responsibility_effort_causality$formula[[1]][3]),
+                              as.character(fit.exp3.responsibility_heuristic$formula[[1]][3]),
+                              as.character(fit.exp3.responsibility_baseline$formula[[1]][3])),
+                  r = c(fun_r_rmse(fit = fit.exp3.responsibility_effort,
+                                   dv = "responsibility")$r,
+                        fun_r_rmse(fit = fit.exp3.responsibility_causality,
+                                   dv = "responsibility")$r,
+                        fun_r_rmse(fit = fit.exp3.responsibility_effort_causality,
+                                   dv = "responsibility")$r,
+                        fun_r_rmse(fit = fit.exp3.responsibility_heuristic,
+                                   dv = "responsibility")$r,
+                        NA),
+                  rmse = c(fun_r_rmse(fit = fit.exp3.responsibility_effort,
+                                      dv = "responsibility")$rmse,
+                           fun_r_rmse(fit = fit.exp3.responsibility_causality,
+                                      dv = "responsibility")$rmse,
+                           fun_r_rmse(fit = fit.exp3.responsibility_effort_causality,
+                                      dv = "responsibility")$rmse,
+                           fun_r_rmse(fit = fit.exp3.responsibility_heuristic,
+                                      dv = "responsibility")$rmse,
+                           fun_r_rmse(fit = fit.exp3.responsibility_baseline,
+                                      dv = "responsibility")$rmse),
+                  elpd = df.elpd$elpd_diff,
+                  elpd_se = df.elpd$se_diff) %>% 
+  mutate(across(where(is.numeric), ~ round(., 2))) %>% 
+  mutate(elpd = str_c(elpd, " (", elpd_se,")")) %>% 
+  select(-elpd_se) %>% 
+  left_join(df.posteriors,
+            by = "model") %>% 
+  left_join(df.individuals %>% 
+              mutate(best_model = str_replace(best_model,
+                                              "effort_causality",
+                                              "effort + causality"),
+                     best_model = str_replace(best_model,
+                                              "heuristic",
+                                              "kinematic features")) %>% 
+              rename(model = best_model,
+                     `# best fit` = n),
+            by = "model") %>% 
+  select(model, intercept, effort, causality, r, rmse, elpd, `# best fit`)
+
+df.table %>% 
+  print_table()
+```
+
+#### Badness
+
+```{r}
+df.elpd = loo_compare(fit.exp3.badness_effort,
+                      fit.exp3.badness_causality,
+                      fit.exp3.badness_effort_causality,
+                      fit.exp3.badness_heuristic,
+                      fit.exp3.badness_baseline) %>% 
+  as_tibble(rownames = "model") %>% 
+  mutate(model = factor(model,
+                        levels = c("fit.exp3.badness_effort",
+                                   "fit.exp3.badness_causality",
+                                   "fit.exp3.badness_effort_causality",
+                                   "fit.exp3.badness_heuristic",
+                                   "fit.exp3.badness_baseline"))) %>% 
+  arrange(model)
+
+df.posteriors = fit.exp3.badness_effort %>% 
+  tidy(effects = "fixed",
+       fix.intercept = F,
+       conf.method = "HPDinterval") %>% 
+  mutate(model = "effort") %>% 
+  bind_rows(fit.exp3.badness_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "causality")) %>% 
+  bind_rows(fit.exp3.badness_effort_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "effort + causality")) %>% 
+  bind_rows(fit.exp3.badness_heuristic %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "kinematic features")) %>%
+  bind_rows(fit.exp3.badness_baseline %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "baseline")) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)),
+         label = str_c(estimate, " [", conf.low, ", ", conf.high, "]")) %>% 
+  select(model, term, label) %>% 
+  pivot_wider(names_from = term,
+              values_from = label) %>% 
+  rename(intercept = Intercept)
+
+df.individuals = df.exp3.badness.individual_fit %>% 
+  count(best_model)
+
+
+fun_r_rmse = function(fit, dv){
+  df = fit %>% 
+    fitted(newdata = df.exp3.model,
+           re_formula = NA) %>% 
+    as_tibble() %>% 
+    clean_names()  %>% 
+    bind_cols(df.exp3.means)
+  
+  if(sd(df$estimate) > 0){
+    df = df %>% 
+      summarize(r = cor(.data[[dv]], estimate),
+                rmse = rmse(.data[[dv]], estimate))
+  }else{
+    df = df %>% 
+      summarize(rmse = rmse(.data[[dv]], estimate))
+  }
+  return(df)
+}
+
+df.table = tibble(model = c("effort",
+                            "causality",
+                            "effort + causality",
+                            "kinematic features",
+                            "baseline"),
+                  formula = c(as.character(fit.exp3.badness_effort$formula[[1]][3]),
+                              as.character(fit.exp3.badness_causality$formula[[1]][3]),
+                              as.character(fit.exp3.badness_effort_causality$formula[[1]][3]),
+                              as.character(fit.exp3.badness_heuristic$formula[[1]][3]),
+                              as.character(fit.exp3.badness_baseline$formula[[1]][3])),
+                  r = c(fun_r_rmse(fit = fit.exp3.badness_effort,
+                                   dv = "badness")$r,
+                        fun_r_rmse(fit = fit.exp3.badness_causality,
+                                   dv = "badness")$r,
+                        fun_r_rmse(fit = fit.exp3.badness_effort_causality,
+                                   dv = "badness")$r,
+                        fun_r_rmse(fit = fit.exp3.badness_heuristic,
+                                   dv = "badness")$r,
+                        NA),
+                  rmse = c(fun_r_rmse(fit = fit.exp3.badness_effort,
+                                      dv = "badness")$rmse,
+                           fun_r_rmse(fit = fit.exp3.badness_causality,
+                                      dv = "badness")$rmse,
+                           fun_r_rmse(fit = fit.exp3.badness_effort_causality,
+                                      dv = "badness")$rmse,
+                           fun_r_rmse(fit = fit.exp3.badness_heuristic,
+                                      dv = "badness")$rmse,
+                           fun_r_rmse(fit = fit.exp3.badness_baseline,
+                                      dv = "badness")$rmse),
+                  elpd = df.elpd$elpd_diff,
+                  elpd_se = df.elpd$se_diff) %>% 
+  mutate(across(where(is.numeric), ~ round(., 2))) %>% 
+  mutate(elpd = str_c(elpd, " (", elpd_se,")")) %>% 
+  select(-elpd_se) %>% 
+  left_join(df.posteriors,
+            by = "model") %>% 
+  left_join(df.individuals %>% 
+              mutate(best_model = str_replace(best_model,
+                                              "effort_causality",
+                                              "effort + causality"),
+                     best_model = str_replace(best_model,
+                                              "heuristic",
+                                              "kinematic features")) %>% 
+              rename(model = best_model,
+                     `# best fit` = n),
+            by = "model") %>% 
+  select(model, intercept, effort, causality, r, rmse, elpd, `# best fit`)
+
+df.table %>% 
+  # print_table("latex")
+  print_table()
+```
+
+```{r}
+df.elpd = loo_compare(fit.exp3.badness_effort,
+                      fit.exp3.badness_causality,
+                      fit.exp3.badness_effort_causality,
+                      fit.exp3.badness_heuristic) %>% 
+  as_tibble(rownames = "model") %>% 
+  mutate(model = factor(model,
+                        levels = c("fit.exp3.badness_effort",
+                                   "fit.exp3.badness_causality",
+                                   "fit.exp3.badness_effort_causality",
+                                   "fit.exp3.badness_heuristic"))) %>% 
+  arrange(model)
+
+weights = model_weights(fit.exp3.badness_effort,
+                        fit.exp3.badness_causality,
+                        fit.exp3.badness_effort_causality,
+                        fit.exp3.badness_heuristic)
+
+df.posteriors = fit.exp3.badness_effort %>% 
+  tidy(effects = "fixed",
+       fix.intercept = F,
+       conf.method = "HPDinterval") %>% 
+  mutate(model = "effort") %>% 
+  bind_rows(fit.exp3.badness_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "causality")) %>% 
+  bind_rows(fit.exp3.badness_effort_causality %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "effort + causality")) %>% 
+  bind_rows(fit.exp3.badness_heuristic %>% 
+              tidy(effects = "fixed",
+                   fix.intercept = F,
+                   conf.method = "HPDinterval") %>% 
+              mutate(model = "kinematic features")) %>% 
+  mutate(across(where(is.numeric), ~ round(., 2)),
+         label = str_c(estimate, " [", conf.low, ", ", conf.high, "]")) %>% 
+  select(model, term, label) %>% 
+  pivot_wider(names_from = term,
+              values_from = label) %>% 
+  rename(intercept = Intercept)
+
+
+fun_r_rmse = function(fit, dv){
+  fit %>% 
+    fitted(newdata = df.exp3.model,
+           re_formula = NA) %>% 
+    as_tibble() %>% 
+    clean_names()  %>% 
+    bind_cols(df.exp3.means) %>% 
+    summarize(r = cor(.data[[dv]], estimate),
+              rmse = rmse(.data[[dv]], estimate))
+}
+
+df.table = tibble(model = c("effort",
+                            "causality",
+                            "effort + causality",
+                            "kinematic features"),
+                  formula = c(as.character(fit.exp3.badness_effort$formula[[1]][3]),
+                              as.character(fit.exp3.badness_causality$formula[[1]][3]),
+                              as.character(fit.exp3.badness_effort_causality$formula[[1]][3]),
+                              as.character(fit.exp3.badness_heuristic$formula[[1]][3])),
+                  r = c(fun_r_rmse(fit = fit.exp3.badness_effort,
+                                        dv = "badness")$r,
+                             fun_r_rmse(fit = fit.exp3.badness_causality,
+                                        dv = "badness")$r,
+                             fun_r_rmse(fit = fit.exp3.badness_effort_causality,
+                                        dv = "badness")$r,
+                        fun_r_rmse(fit = fit.exp3.badness_heuristic,
+                                        dv = "badness")$r),
+                  rmse = c(fun_r_rmse(fit = fit.exp3.badness_effort,
+                                        dv = "badness")$rmse,
+                             fun_r_rmse(fit = fit.exp3.badness_causality,
+                                        dv = "badness")$rmse,
+                             fun_r_rmse(fit = fit.exp3.badness_effort_causality,
+                                        dv = "badness")$rmse,
+                           fun_r_rmse(fit = fit.exp3.badness_heuristic,
+                                        dv = "badness")$rmse),
+                  elpd = df.elpd$elpd_diff,
+                  elpd_se = df.elpd$se_diff,
+                  weights = weights) %>% 
+  mutate(across(where(is.numeric), ~ round(., 2))) %>% 
+  mutate(elpd = str_c(elpd, " (", elpd_se,")")) %>% 
+  left_join(df.posteriors,
+              by = "model") %>% 
+  select(model, intercept, effort, causality, r, rmse, elpd, weights)
+
+df.table %>% 
+  print_table()
+```
+
+### Model predictions: effort & causality
+
+```{r}
+df.exp3.model %>% 
+  select(clip_index, effort_model, causality_model) %>% 
+  pivot_longer(-clip_index) %>% 
+  mutate(value = 100 * value) %>% 
+  arrange(clip_index) %>% 
+  pivot_wider(names_from = clip_index) %>% 
+  rename(model = name) %>% 
+  mutate(model = str_remove(model, "_model")) %>% 
+  print_table()
+```
+
+### Heuristic model 
+
+#### Responsibility
+
+```{r, warning=FALSE}
+fit.exp3.responsibility_heuristic %>% 
+  tidy(conf.level = 0.95) %>% 
+  filter(effect == "fixed") %>% 
+  mutate(term = str_to_lower(term),
+         term = str_remove(term, "true"),
+         term = str_replace_all(term, "_", " "),
+         term = str_replace(term, fixed("(intercept)"), "intercept")) %>% 
+  select("predictor" = term,
+         "posterior mean" = estimate,
+         "95% credible interval (lower bound)" = conf.low,
+         "95% credible interval (upper bound)" = conf.high) %>% 
+  print_table()
+```
+
+#### Badness
+
+```{r, warning=FALSE}
+fit.exp3.badness_heuristic %>% 
+  tidy(conf.level = 0.95) %>% 
+  filter(effect == "fixed") %>% 
+  mutate(term = str_to_lower(term),
+         term = str_remove(term, "true"),
+         term = str_replace_all(term, "_", " "),
+         term = str_replace(term, fixed("(intercept)"), "intercept")) %>% 
+  select("predictor" = term,
+         "posterior mean" = estimate,
+         "95% credible interval (lower bound)" = conf.low,
+         "95% credible interval (upper bound)" = conf.high) %>% 
+  print_table()
+```
+
+### Individual predictors 
+
+```{r}
+predictors = c("effort", "effort_model", "causality", "causality_model", "distance", "duration", 
+               "frequency", "agent_moving", "patient_moving", "fireball_moving", 
+               "collision_agent_patient", "collision_agent_fireball")
+
+df.exp3.predictors = df.exp3.model %>% 
+  mutate(across(where(is.logical), ~ . * 1)) %>% 
+  summarize(across(predictors,
+                   list(responsibility = ~ cor(., responsibility),
+                        badness = ~ cor(., badness)),
+                   .names = "{.col}.{.fn}")) %>% 
+  pivot_longer(cols = everything(),
+               names_to = "predictor",
+               values_to = "r") %>% 
+  separate(predictor,
+           into = c("predictor", "judgment"),
+           sep = "\\.") %>% 
+  pivot_wider(names_from = judgment,
+              values_from = r)
+
+df.exp3.predictors %>% 
+  print_table()
+```
+
+```{r}
+# combine predictors from Experiment 2 and 3 
+df.exp3.predictors %>% 
+  left_join(df.exp2.predictors,
+            by = "predictor") %>% 
+  select(predictor, 
+         exp2_badness = r,
+         exp3_responsibility = responsibility,
+         exp3_badness = badness) %>% 
+  print_table()
+```
+
+# Session info
+
+```{r, echo=F}
+sessionInfo()
+```

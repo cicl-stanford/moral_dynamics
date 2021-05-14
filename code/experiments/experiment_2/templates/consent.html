@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Consent Form</title>
+    
+    <script src="static/js/utils.js" type="text/javascript"></script>
+
+    <link rel="stylesheet" type="text/css" href="static/css/general.css" />
+  </head>
+  
+  <body>
+    <div class="slide">
+      <h1>MIT Computational Cognitive Science Group</h1>
+      <div class="blue">
+        <div id="consent">
+          <p>
+            By answering the following questions, you are participating in a study being performed by cognitive scientists in the MIT Department of Brain and Cognitive Science. If you have questions about this research, please contact us at <a href="tger@mit.edu">tger@mit.edu</a>. 
+          </p>
+        </div>
+        
+        <p>By selecting the "I Agree" button below, you
+          acknowledge that:</p>
+        <ul>
+          <li>You must be at least 18 years old to participate.</li>
+          <li>Your participation in this research is voluntary.</li>
+          <li>You may decline to answer any or all of the following questions by closing this window in your browser.</li>
+          <li>You may decline further participation, at any time, without adverse consequences.</li>
+          <li>Your anonymity is assured; the researchers who have requested your participation will not receive any personal information about you.</li>
+        </ul>        
+      </div>
+      
+      <div class="continue">
+        <p>Do you agree with the terms of the
+          experiment as explained above?</p>
+        <button type="button" id="IAgree" onclick="window.location='/exp?hitId={{ hitid }}&assignmentId={{ assignmentid }}&workerId={{ workerid }}'" >I Agree</button>
+        <button type="button" id="NoThanks" onclick="window.close();">No Thanks</button>
+      </div>      
+    </div>
+  </body>
+</html>

@@ -1,0 +1,75 @@
+{
+        "intro":[
+        {
+            "name": "experiment_slides"
+        },
+        {
+            "name": "experiment_slides1"
+        },
+        {
+            "name": "experiment_slides2"
+        },
+        {
+            "name": "experiment_slides3"
+        },
+        {
+            "name": "experiment_slides4"
+        }
+    ],
+        "stim":[
+        {
+            "pair": ["video3","video1"]
+        },
+        {
+            "pair": ["video11","video4"]
+        },
+        {
+            "pair": ["video6","video5"]
+        },
+        {
+            "pair": ["video7","video12"]
+        },
+        {
+            "pair": ["video7","video4"]
+        },
+        {
+            "pair": ["video4","video12"]
+        },
+        {
+            "pair": ["video11","video7"]
+        },
+        {
+            "pair": ["video8","video10"]
+        },
+        {
+            "pair": ["video9","video2"]
+        },
+        {
+            "pair": ["video10","video9"]
+        },
+        {
+            "pair": ["video10","video3"]
+        }
+    ],
+        "vid":[
+        {
+            "name": "intro"
+        },
+        {
+            "name": "intro1"
+        },
+        {
+            "name": "intro2"
+        },
+        {
+            "name": "intro3"
+        }
+    ],
+    "questions":[
+        {"q": "In which clip was what Blue did worse?", 
+        "l": ["Definitely Clip A", "Definitely Clip B", "Equally Bad"]}
+    ]
+}
+
+
+ 
