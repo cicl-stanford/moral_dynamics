@@ -9,6 +9,8 @@ When holding others morally responsible, we care about what they did, and what t
 ![Banner](figures/banner.png)
 
 # Repo Structure
+
+```
 .
 ├── code
 │   ├── R
@@ -35,7 +37,7 @@ When holding others morally responsible, we care about what they did, and what t
     ├── experiment1
     ├── experiment2
     └── experiment3
-
+```
 ## code
 
 This directory contains all code related to the project.
