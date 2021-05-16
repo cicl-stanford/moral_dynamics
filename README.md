@@ -58,14 +58,14 @@ Code used to render our physical simulations into videos using [Blender](https:/
 
 Code used to develop the physical simulations for our experiments and model.
 
-* ```agents.py``` contains base classes for the agents in our simulations
-* ```environment.py``` contains base classes for the simulation environments
-* ```handlers.py``` contains necessary collision handlers for the physics engine
+* ```agents.py``` contains the ```Agent``` class, defining the methods for the agents in our simulations
+* ```environment.py``` contains the ```Environement``` class, defining the methods for the simulation environments
+* ```handlers.py``` contains three necessary collision handlers for the physics engine that resolve collisions (e.g. what should happen when an Agent collides with a Patient)
 * ```record.py``` contains functions for recording predictions from our model
-* ```convert_to_json.py``` contains methods for converting physics data from our simulation into a JSON
-* ```moral_kinematics_scenarios.py``` contains the defined simulations we used in our paper
+* ```convert_to_json.py``` contains methods for converting physics data from a given simulation into a JSON that is then used to render the simulation in 3D
+* ```moral_kinematics_scenarios.py``` contains all of the defined simulations we used in our paper
 * ```features.py``` contains all of the functions for computing kinematic features from simulation JSON data
-* ```video.py``` contains all of the functions for recording the simulations as videos
+* ```video.py``` contains all of the functions for recording the simulations as videos that then are used for stimuli in our experiments
 
 ## data
 
