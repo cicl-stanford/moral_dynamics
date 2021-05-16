@@ -94,23 +94,23 @@ def simple_scenario(view=True,std_dev=0,frict=0.05)
     agent, patient, fireball = {}, {}, {}
     # Agent parameters include:
     # Starting location, indexed by 'loc'
-	agent['loc'] = (100,300) 
+    agent['loc'] = (100,300) 
     patient['loc'] = (800,300)
     fireball['loc'] = (500,300)
     # Color of the agent, indexed by 'color'
-	agent['color'] = "blue"
+    agent['color'] = "blue"
     patient['color'] = "green"
     fireball['color'] = "red"
     # The actions the agent takes during the simulation (i.e. it's policy),
     #  indexed by 'moves'. Importantly, actions are discretized and time-limited.
     #  They only last a certain amount of ticks and when an agent has finished its 
     #  policy, the simulation will stop.
-	agent['moves'] = ['R', 'R', 'R', 'R', 'R']
+    agent['moves'] = ['R', 'R', 'R', 'R', 'R']
     patient['moves'] = ['N', 'N', 'N', 'N', 'N']
     fireball['moves'] = ['N', 'N', 'N', 'N', 'N']
     # A collision type, indexed by 'col'. This is a native pymunk property that
     #  let's pymunk know which collision handlers apply to which objects.
-	agent['coll'] = 0
+    agent['coll'] = 0
     patient['coll'] = 1
     fireball['coll'] = 3
     
@@ -121,13 +121,13 @@ def simple_scenario(view=True,std_dev=0,frict=0.05)
     #  the function applies to. In order, the three below simply notify when the agent 
     #  collides with a patient, when the agent collides with the fireball, and removes the 
     #  patient when it collides with the fireball, respectively.
-	handlers =[(0,1,ap0),(0,2,af0),(1,2,rem0)]
-	# We also define the target velcoties for each of the agents as a triple, with the
+    handlers =[(0,1,ap0),(0,2,af0),(1,2,rem0)]
+    # We also define the target velcoties for each of the agents as a triple, with the
     #  implicit ordering of agent, patient, fireball (first object, second object, third object)
-	vel = 300,150,150
+    vel = 300,150,150
     # Finally, we take each of these defined parameters and pass them into the Environment class
     #  constructor.
-	env = Environment(a_params,p_params,f_params,vel,handlers,view,std_dev,frict)
+    env = Environment(a_params,p_params,f_params,vel,handlers,view,std_dev,frict)
     # This is then returned as an object to be queried by the various modules within the framework.
     return env
 ```
