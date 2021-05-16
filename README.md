@@ -66,6 +66,7 @@ Code used to develop the physical simulations for our experiments and model.
 * ```moral_kinematics_scenarios.py``` contains all of the defined simulations we used in our paper
 * ```features.py``` contains all of the functions for computing kinematic features from simulation JSON data
 * ```video.py``` contains all of the functions for recording the simulations as videos that then are used for stimuli in our experiments
+* ```counterfactual.py``` contains the functions necessary for running counterfactual simulations over a given set of scenarios
 
 ## data
 
@@ -135,16 +136,30 @@ def simple_scenario(view=True,std_dev=0,frict=0.05)
 Now that we have defined our scenario, we can construct it with a simple call and use it:
 
 ```python
-simple_env = simple_scenario()
+# If you want to view the scene when the run() method is invoked
+simple_env = simple_scenario(view=True)
+# If you don't want to view the scene when the run() method is invoked
+simple_env = simple_scenario(view=False)
 
-# To run and view the scenario for debugging
-simple_env.run(view=True)
+# To run and record the scenario into a video
+simple_env.run(video=True,filename="simple_scenario.mp4")
+# To run and not record the scenario into a video
+simple_env.run(video=False)
 
 # To run a counterfactual of the scenario
 from counterfactual import counterfactual_simulation
 # Probability that the agent caused the outcome of the simple_scenario
 prob_of_cause = counterfactual_simulation(environment=simple_env,std_dev=1.2,num_times=1000,view=False)
+
+# To simply run a counterfactual for debugging or viewing, without calculating probability of causality
+sd = 1.2 # set your desired noise level
+simple_env = simple_scenario(view=True) # Construct the environment
+simple_env.counterfactual_run(std_dev=sd)
+
+# To record that one counterfactual
+simple_env.counterfactual_run(std_dev=sd,video=True,filename=simple_scenario_counter.mp4")
 ```
 
-To record the variables of interest from these scenarios such as effort, causality, and features en masse, refer to the documentation within the record.py file.
+
+To record the variables of interest from these scenarios such as effort, causality, and features en masse, refer to the example within the record.py file.
 
