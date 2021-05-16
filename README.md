@@ -78,3 +78,73 @@ Figures from the paper, and the diagrams of the different video clips.
 ## videos 
 
 Video clips from each experiment. 
+
+# Example: Setting up a scenario
+
+Here, we demonstrate how one can setup up their own scenario using the Moral Dynamics framework.
+
+We decided to represent each scenario as a callable function. We'll setup a simple scenario with three agents, defined by the ```Agent``` class, in a simple environment, defined by the ```Environment``` class. In this scenario we will have an "agent" that pushes a "patient" into a "fireball". When the "patient" collides with the "fireball" we want the patient to be removed from the scene, so as to demonstrate the patient was harmed.
+
+```python
+def simple_scenario(view=True,std_dev=0,frict=0.05)
+    # A simple scenario
+      
+    # Agents
+    # We define our agents via their parameters through dictionaries
+    agent, patient, fireball = {}, {}, {}
+    # Agent parameters include:
+    # Starting location, indexed by 'loc'
+	agent['loc'] = (100,300) 
+    patient['loc'] = (800,300)
+    fireball['loc'] = (500,300)
+    # Color of the agent, indexed by 'color'
+	agent['color'] = "blue"
+    patient['color'] = "green"
+    fireball['color'] = "red"
+    # The actions the agent takes during the simulation (i.e. it's policy),
+    #  indexed by 'moves'. Importantly, actions are discretized and time-limited.
+    #  They only last a certain amount of ticks and when an agent has finished its 
+    #  policy, the simulation will stop.
+	agent['moves'] = ['R', 'R', 'R', 'R', 'R']
+    patient['moves'] = ['N', 'N', 'N', 'N', 'N']
+    fireball['moves'] = ['N', 'N', 'N', 'N', 'N']
+    # A collision type, indexed by 'col'. This is a native pymunk property that
+    #  let's pymunk know which collision handlers apply to which objects.
+	agent['coll'] = 0
+    patient['coll'] = 1
+    fireball['coll'] = 3
+    
+    # Environment
+    # The environment also needs to be defined. First we define the collision handlers.
+    #  These are formally defined in handlers.py and then placed in a list of triples,
+    #  that denote the function that is called during a collision and the collision types 
+    #  the function applies to. In order, the three below simply notify when the agent 
+    #  collides with a patient, when the agent collides with the fireball, and removes the 
+    #  patient when it collides with the fireball, respectively.
+	handlers =[(0,1,ap0),(0,2,af0),(1,2,rem0)]
+	# We also define the target velcoties for each of the agents as a triple, with the
+    #  implicit ordering of agent, patient, fireball (first object, second object, third object)
+	vel = 300,150,150
+    # Finally, we take each of these defined parameters and pass them into the Environment class
+    #  constructor.
+	env = Environment(a_params,p_params,f_params,vel,handlers,view,std_dev,frict)
+    # This is then returned as an object to be queried by the various modules within the framework.
+    return env
+```
+
+Now that we have defined our scenario, we can construct it with a simple call and use it:
+
+```python
+simple_env = simple_scenario()
+
+# To run and view the scenario for debugging
+simple_env.run(view=True)
+
+# To run a counterfactual of the scenario
+from counterfactual import counterfactual_simulation
+# Probability that the agent caused the outcome of the simple_scenario
+prob_of_cause = counterfactual_simulation(environment=simple_env,std_dev=1.2,num_times=1000,view=False)
+```
+
+To record the variables of interest from these scenarios such as effort, causality, and features en masse, refer to the documentation within the record.py file.
+
