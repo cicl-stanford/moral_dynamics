@@ -79,7 +79,7 @@ Figures from the paper, and the diagrams of the different video clips.
 
 ## videos 
 
-Video clips from each experiment. 
+Video clips from each experiment. Notice that the mapping between video names and clip/trial names in the experiments of the paper, take a look at the section `Mapping between video names and clip names in the different experiments` in the analysis file [here](https://cicl-stanford.github.io/moral_dynamics/). 
 
 # Example: Setting up a scenario
 

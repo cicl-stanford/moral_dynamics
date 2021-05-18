@@ -372,6 +372,11 @@ df.plot = df.plot %>%
                                     levels = unique(clip_labels),
                                     labels = levels(clip_labels)))
 
+df.exp1.mapping = df.plot %>% 
+  select(contains("clip_")) %>% 
+  distinct() %>% 
+  rename(trial = clip_index)
+
 fun_image = function(grob, label){
   ggplot() + 
     background_image(grob) +
@@ -592,8 +597,6 @@ df.exp1.long %>%
   pivot_wider(names_from = clip_index, 
               values_from = value) %>% 
   print_table(digits = 0)
-  # print_table(format = "latex",
-  #             digits = 0)
 ```
 
 # EXPERIMENT 2
@@ -1253,6 +1256,10 @@ df.text = df.clip_order2 %>%
          x = 0.5, 
          y = 172)
 
+df.exp2.mapping = df.text %>% 
+  select(trial = clip_index, 
+         clip)
+
 ggplot(data = df.plot,
        mapping = aes(x = condition,
                      y = rating,
@@ -1328,7 +1335,7 @@ ggsave(filename = "../../figures/plots/experiment2_bars.pdf",
 
 ### Model comparison 
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 df.elpd = loo_compare(fit.exp2.moral_effort,
                       fit.exp2.moral_causality,
                       fit.exp2.moral_effort_causality,
@@ -1442,12 +1449,12 @@ df.table = tibble(model = c("effort",
                                               "heuristic",
                                               "kinematic features")) %>% 
               rename(model = best_model,
-                     `# best fit` = n)) %>% 
+                     `# best fit` = n),
+            by = "model") %>% 
   rename(effort = effort_empirical) %>% 
   select(model, intercept, effort, causality, r, rmse, elpd, `# best fit`)
 
 df.table %>% 
-  # print_table("latex")
   print_table()
 ```
 
@@ -2966,7 +2973,6 @@ df.table = tibble(model = c("effort",
   select(model, intercept, effort, causality, r, rmse, elpd, `# best fit`)
 
 df.table %>% 
-  # print_table("latex")
   print_table()
 ```
 
@@ -3151,6 +3157,29 @@ df.exp3.predictors %>%
          exp3_badness = badness) %>% 
   print_table()
 ```
+
+# Misc 
+
+## Mapping between video names and clip names in the different experiments 
+
+```{r}
+# Experiment 1 
+df.exp1.mapping %>% 
+  print_table()
+
+# Experiment 2 
+df.clip_order2 %>% 
+  select(trial = clip_index, 
+         clip) %>% 
+  print_table()
+
+# Experiment 3 
+df.clip_order3 %>% 
+  select(trial = clip_index, 
+         clip) %>% 
+  print_table()
+```
+
 
 # Session info
 
